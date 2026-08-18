@@ -1,4 +1,5 @@
 dataset:
+  dataset_dir: "data/dataset"
   archive_path: "d:\\Downloads\\archive.zip"
   movie_metadata_file: "movie_metadata/movie_meta_data.csv"
   rule_based_dir: "screenplay_data/data/rule_based_annotations/rule_based_annotations/"
