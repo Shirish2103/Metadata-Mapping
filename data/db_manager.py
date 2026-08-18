@@ -14,11 +14,9 @@ class DatabaseManager:
         return sqlite3.connect(self.db_path)
 
     def init_db(self):
-        """Initializes database schema tables."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # Movies Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS movies (
                     imdb_id TEXT PRIMARY KEY,
@@ -31,7 +29,6 @@ class DatabaseManager:
                 )
             """)
 
-            # Scenes Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS scenes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +43,6 @@ class DatabaseManager:
                 )
             """)
 
-            # Dialogues Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dialogues (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +56,6 @@ class DatabaseManager:
                 )
             """)
 
-            # Extracted Metadata Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS extracted_metadata (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +77,6 @@ class DatabaseManager:
             conn.commit()
 
     def save_movie(self, meta: MovieMetadata):
-        """Saves or updates movie metadata record."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -100,7 +94,6 @@ class DatabaseManager:
             conn.commit()
 
     def save_scenes(self, imdb_id: str, scenes: List[SceneSegment]):
-        """Saves scene segments and dialogues."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM scenes WHERE imdb_id = ?", (imdb_id,))
@@ -127,7 +120,6 @@ class DatabaseManager:
             conn.commit()
 
     def save_extracted_metadata(self, result: ScriptMetadataResult):
-        """Saves extracted metadata result into SQLite."""
         if result.movie_info:
             self.save_movie(result.movie_info)
 
@@ -164,7 +156,6 @@ class DatabaseManager:
         start_time: Optional[str] = None, 
         end_time: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
-        """Retrieves stored metadata for a movie by IMDB ID or Title, optionally filtered by time duration."""
         target = imdb_id_or_title.strip().lower()
         with self.get_connection() as conn:
             cursor = conn.cursor()

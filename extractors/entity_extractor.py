@@ -40,18 +40,12 @@ class EntityExtractor(BaseExtractor):
         return True
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedEntities:
-        """
-        Extracts named entities (People, Organizations, Locations, Products, Other) 
-        using spaCy Statistical NER pipeline, POS Proper Noun tagging, and Generative AI.
-        No hardcoded entity dictionaries used.
-        """
         people: Set[str] = set()
         locations: Set[str] = set()
         organizations: Set[str] = set()
         products: Set[str] = set()
         other_entities: Set[str] = set()
 
-        # 1. Structural extraction: Scene speakers & character names mentioned in active window
         active_text_sample = []
         for sc in scenes:
             if sc.location:
@@ -72,7 +66,6 @@ class EntityExtractor(BaseExtractor):
 
         combined_sample = " ".join(active_text_sample[:10000])
 
-        # Match metadata cast only if mentioned in the active time window text
         if movie_info and combined_sample:
             combined_sample_lower = combined_sample.lower()
             for person in (movie_info.cast + movie_info.directors + movie_info.writers):
@@ -83,7 +76,6 @@ class EntityExtractor(BaseExtractor):
                     if len(first_name) > 2 and (first_name in combined_sample_lower or (last_name and len(last_name) > 2 and last_name in combined_sample_lower)):
                         people.add(clean_p.title())
 
-        # 2. spaCy Statistical Named Entity Recognition (NER)
         if self.nlp and combined_sample:
             doc = self.nlp(combined_sample[:15000])
             for ent in doc.ents:
@@ -104,7 +96,6 @@ class EntityExtractor(BaseExtractor):
                 elif label in {"EVENT", "WORK_OF_ART", "LAW", "NORP"}:
                     other_entities.add(clean_ent)
 
-        # 3. Generative AI LLM Zero-Shot NER (if API Key present)
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
             try:
@@ -136,9 +127,8 @@ class EntityExtractor(BaseExtractor):
                     if "other_entities" in parsed and isinstance(parsed["other_entities"], list):
                         other_entities.update([str(x).strip().title() for x in parsed["other_entities"] if self._is_valid_entity_nlp(str(x))])
             except Exception:
-                pass  # Fallback to spaCy NER
+                pass
 
-        # Dynamic cross-category deduplication
         people_upper = {p.upper() for p in people}
         clean_locs = {loc for loc in locations if loc.upper() not in people_upper and len(loc) > 2}
         clean_orgs = {org for org in organizations if org.upper() not in people_upper and len(org) > 2}

@@ -3,7 +3,6 @@ from typing import List, Dict, Any, Optional
 from models.schema import TimeRange, SceneSegment, Dialogue
 
 def format_seconds_to_timestamp(seconds: float) -> str:
-    """Formats float seconds into HH:MM:SS string."""
     seconds = max(0.0, seconds)
     hrs = int(seconds // 3600)
     mins = int((seconds % 3600) // 60)
@@ -11,7 +10,6 @@ def format_seconds_to_timestamp(seconds: float) -> str:
     return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 def parse_srt_timestamp(ts_str: str) -> float:
-    """Converts SRT timestamp (00:01:20,500) to seconds float."""
     ts_str = ts_str.replace(',', '.').strip()
     parts = ts_str.split(':')
     if len(parts) == 3:
@@ -23,7 +21,6 @@ def parse_srt_timestamp(ts_str: str) -> float:
     return 0.0
 
 def timestamp_to_seconds(ts_str: str) -> float:
-    """Converts a timestamp string ('HH:MM:SS', 'MM:SS', or numerical string) to float seconds."""
     if not ts_str:
         return 0.0
     ts_str = str(ts_str).strip()
@@ -49,13 +46,9 @@ class TimestampParser:
         scenes: List[SceneSegment], 
         lines_per_minute: float = 22.0
     ) -> List[SceneSegment]:
-        """
-        Estimates timestamps for movie script scenes using standard screenplay pacing.
-        1 page (~22 lines) ≈ 1 minute (60 seconds).
-        """
         current_line_count = 0
         for scene in scenes:
-            scene_lines = 1  # heading line
+            scene_lines = 1
             if scene.action_text:
                 scene_lines += len(scene.action_text.splitlines())
             for d in scene.dialogues:
@@ -70,7 +63,6 @@ class TimestampParser:
                 is_estimated=True
             )
 
-            # Assign dialogue-level timestamps within scene
             d_current = current_line_count + 1
             for d in scene.dialogues:
                 d_lines = 1 + len(d.text.splitlines())
@@ -93,9 +85,6 @@ class TimestampParser:
         start_time_str: str, 
         end_time_str: str
     ) -> List[SceneSegment]:
-        """
-        Filters scenes and dialogues that overlap with the window [win_start, win_end].
-        """
         win_start = timestamp_to_seconds(start_time_str)
         win_end = timestamp_to_seconds(end_time_str)
 
@@ -120,10 +109,6 @@ class TimestampParser:
 
     @staticmethod
     def parse_srt(srt_content: str) -> List[Dict[str, Any]]:
-        """
-        Parses an SRT subtitle transcript into timestamped dialogue blocks.
-        Strips HTML tags, sound effects, and stage directions dynamically for NLP processing.
-        """
         blocks = re.split(r'\n\s*\n', srt_content.strip())
         results = []
 
@@ -137,7 +122,6 @@ class TimestampParser:
                 text_lines = lines[2:]
                 
                 full_text = " ".join(text_lines)
-                # Strip HTML formatting tags dynamically
                 full_text = re.sub(r'<[^>]+>', '', full_text).strip()
                 
                 speaker = "Unknown"
@@ -149,19 +133,16 @@ class TimestampParser:
                         speaker = spk_clean_no_paren
                         full_text = txt.strip()
 
-                # Dynamic sound effect / stage direction cleaning
                 full_text = re.sub(r'\([^\)]*\)', '', full_text)
                 full_text = re.sub(r'\[[^\]]*\]', '', full_text)
                 full_text = re.sub(r'^[-*\s]+', '', full_text).strip()
 
-                # Dynamic speaker validation
                 speaker = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', speaker).strip()
                 if not speaker or len(speaker) <= 1 or (speaker.isupper() and len(speaker.split()) > 3):
                     speaker = "Unknown"
                 else:
                     speaker = speaker.title()
 
-                # Ignore pure sound effect blocks
                 if not full_text:
                     continue
 
@@ -173,4 +154,3 @@ class TimestampParser:
                     "is_estimated": False
                 })
         return results
-

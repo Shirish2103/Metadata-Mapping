@@ -21,11 +21,6 @@ class TopicExtractor(BaseExtractor):
             self.nlp = None
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedTopics:
-        """
-        Extracts topics, subjects, and keywords using pure statistical NLP (spaCy POS tagging,
-        Dependency parsing, NER filtering, TF-IDF vectorization) and Generative AI.
-        No hardcoded word lists used.
-        """
         full_text_list = []
         for sc in scenes:
             if sc.action_text:
@@ -40,18 +35,13 @@ class TopicExtractor(BaseExtractor):
         if not combined_text.strip():
             return ExtractedTopics(main_topics=[], subjects=[], frequently_mentioned_terms=[], keywords=[])
 
-        # 1. Linguistic NLP Filtering via spaCy (POS Tagging, Dependency Parsing & NER)
         noun_lemmas = []
         doc_chunks = []
 
         if self.nlp:
-            # Process text with spaCy pipeline
             doc = self.nlp(combined_text[:35000])
             
             for token in doc:
-                # Dynamic NLP filtering criteria:
-                # Must be NOUN or PROPN, syntactically meaningful (subject/object/root),
-                # not a stopword, punctuation, number, or tagged as PERSON/DATE/TIME entity
                 if (
                     token.pos_ in {"NOUN", "PROPN"}
                     and not token.is_stop
@@ -63,13 +53,11 @@ class TopicExtractor(BaseExtractor):
                 ):
                     noun_lemmas.append(token.lemma_.lower())
 
-        # 2. Dynamic TF-IDF Calculation on Pure NLP Noun Lemmas
         freq_terms = []
         keywords = []
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
             
-            # Group scene texts into document chunks for TF-IDF scoring
             doc_chunks = [sc.action_text + " " + " ".join([d.text for d in sc.dialogues]) for sc in scenes if sc.action_text or sc.dialogues]
             if not doc_chunks:
                 doc_chunks = [combined_text]
@@ -95,7 +83,6 @@ class TopicExtractor(BaseExtractor):
             keywords = ranked[:15]
             freq_terms = ranked[:10]
 
-        # 3. Dynamic Topic Initialisation from Movie Genres & Top Extracted Keywords
         main_topics = []
         if movie_info and movie_info.genres:
             for g in movie_info.genres:
@@ -104,7 +91,6 @@ class TopicExtractor(BaseExtractor):
 
         subjects = [kw.title() for kw in keywords[2:8]] if len(keywords) >= 8 else [kw.title() for kw in keywords[:5]]
 
-        # 4. Generative AI LLM Zero-Shot High-Level Semantic Extraction (if API Key present)
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
             try:
@@ -136,7 +122,7 @@ class TopicExtractor(BaseExtractor):
                         if parsed["keywords"]:
                             keywords = [k.lower() for k in parsed["keywords"] if isinstance(k, str)]
             except Exception:
-                pass  # Fallback to statistical NLP output
+                pass
 
         return ExtractedTopics(
             main_topics=main_topics[:6],

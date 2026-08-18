@@ -41,21 +41,16 @@ class MetadataProcessor:
         start_time: Optional[str] = None, 
         end_time: Optional[str] = None
     ) -> ScriptMetadataResult:
-        """Processes a movie script transcript from the Kaggle dataset."""
-        # 1. Load Movie Metadata
         movie_info = self.loader.load_movie_metadata(imdb_id_or_title)
         if not movie_info:
             raise ValueError(f"Movie metadata not found for query: '{imdb_id_or_title}'")
 
-        # 2. Load Screenplay Scenes & Estimate Timestamps
         scenes = self.loader.load_screenplay_scenes(movie_info.imdb_id)
         if not scenes:
             raise ValueError(f"Screenplay JSON transcript not found for: '{movie_info.title}' ({movie_info.imdb_id})")
 
-        # 3. Save full scenes and dialogues to database
         self.db.save_scenes(movie_info.imdb_id, scenes)
 
-        # Filter scenes by time window if start_time or end_time is provided
         is_windowed = False
         if start_time or end_time:
             s_ts = start_time if start_time else "00:00:00"
@@ -63,13 +58,11 @@ class MetadataProcessor:
             scenes = TimestampParser.filter_scenes_by_timerange(scenes, s_ts, e_ts)
             is_windowed = True
 
-        # 4. Extract Metadata Categories
         topics: ExtractedTopics = self.topic_extractor.extract(movie_info, scenes)
         entities: ExtractedEntities = self.entity_extractor.extract(movie_info, scenes)
         sentiment: ExtractedSentiment = self.sentiment_extractor.extract(movie_info, scenes)
         category: ExtractedCategory = self.category_extractor.extract(movie_info, scenes)
 
-        # 5. Calculate time range
         if scenes and scenes[0].time_range and scenes[-1].time_range:
             actual_start = start_time if start_time else scenes[0].time_range.start_time
             actual_end = end_time if end_time else scenes[-1].time_range.end_time
@@ -98,7 +91,6 @@ class MetadataProcessor:
             else:
                 movie_info.plot = f"No scene activity found between {actual_start} and {actual_end}."
 
-        # Collect unique speakers and windowed dialogues
         speakers = set()
         dialogues_in_window = []
         for sc in scenes:
@@ -115,7 +107,6 @@ class MetadataProcessor:
                         )
                     )
 
-        # 6. Aggregate into Pydantic ScriptMetadataResult
         result = ScriptMetadataResult(
             imdb_id=movie_info.imdb_id,
             title=movie_info.title + (f" [{actual_start} - {actual_end}]" if is_windowed else ""),
@@ -130,7 +121,6 @@ class MetadataProcessor:
             dialogues_in_window=dialogues_in_window
         )
 
-        # 7. Persist to SQLite
         self.db.save_extracted_metadata(result)
 
         return result
@@ -142,7 +132,6 @@ class MetadataProcessor:
         start_time: Optional[str] = None, 
         end_time: Optional[str] = None
     ) -> ScriptMetadataResult:
-        """Processes an external SRT transcript file with exact timestamps."""
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"SRT file not found: {filepath}")
 
@@ -160,7 +149,6 @@ class MetadataProcessor:
 
         imdb_id = "SRT_" + str(abs(hash(filepath)) % 1000000)
 
-        # Group SRT blocks into a single scene segment
         dialogues = []
         speakers = set()
         for idx, block in enumerate(srt_blocks):
@@ -213,7 +201,6 @@ class MetadataProcessor:
         sentiment = self.sentiment_extractor.extract(movie_info, scenes)
         category = self.category_extractor.extract(movie_info, scenes)
 
-        # Collect unique speakers and windowed dialogues
         dialogues_in_window = []
         speakers = set()
         for sc in scenes:
@@ -246,4 +233,3 @@ class MetadataProcessor:
 
         self.db.save_extracted_metadata(result)
         return result
-

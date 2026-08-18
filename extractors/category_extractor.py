@@ -12,11 +12,6 @@ except ImportError:
 
 class CategoryExtractor(BaseExtractor):
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedCategory:
-        """
-        Classifies content into primary and secondary categories dynamically 
-        using TF-IDF Cosine Similarity and Generative AI Zero-Shot Classification.
-        No hardcoded category word lists used.
-        """
         allowed_categories = self.config.get("categories", [
             "News", "Entertainment", "Education", "Sports", "Drama", "Comedy", 
             "Action", "Romance", "Crime", "Politics", "Business", "Other"
@@ -25,14 +20,12 @@ class CategoryExtractor(BaseExtractor):
         primary = allowed_categories[0]
         secondary = []
 
-        # 1. Use Metadata Genres if explicitly available
         if movie_info and movie_info.genres and movie_info.genres != ["Entertainment"]:
             matched = [g for g in movie_info.genres if g in allowed_categories]
             if matched:
                 primary = matched[0]
                 secondary = matched[1:]
 
-        # 2. Dynamic TF-IDF Cosine Similarity for Zero-Shot Category Scoring
         full_text = " ".join([d.text for sc in scenes for d in sc.dialogues if d.text]).strip()
         if not full_text and movie_info and movie_info.plot:
             full_text = movie_info.plot
@@ -61,7 +54,6 @@ class CategoryExtractor(BaseExtractor):
 
         reasoning = f"Categorized using dynamic TF-IDF semantic vector similarity ({primary})."
 
-        # 3. Generative AI LLM Zero-Shot Classification
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
             try:

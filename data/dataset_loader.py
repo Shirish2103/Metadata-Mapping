@@ -51,7 +51,6 @@ class DatasetLoader:
         return zipfile.ZipFile(self.archive_path, 'r')
 
     def get_available_movies(self) -> List[Dict[str, str]]:
-        """Returns list of movies available in the dataset metadata."""
         movies = []
         with self._ensure_zip_open() as zf:
             with zf.open('movie_metadata/movie_meta_data.csv') as f:
@@ -73,7 +72,6 @@ class DatasetLoader:
         return movies
 
     def load_movie_metadata(self, imdb_id_or_title: str) -> Optional[MovieMetadata]:
-        """Fetches MovieMetadata for a given IMDB ID or Title."""
         target = imdb_id_or_title.strip().lower()
         target_id = target.rsplit('_', 1)[-1] if '_' in target else target
 
@@ -112,7 +110,6 @@ class DatasetLoader:
         return None
 
     def load_screenplay_scenes(self, imdb_id_or_title: str) -> List[SceneSegment]:
-        """Loads rule-based JSON screenplays for a movie and returns structured SceneSegments."""
         meta = self.load_movie_metadata(imdb_id_or_title)
         target_id = meta.imdb_id if meta else imdb_id_or_title
         raw_id = target_id.lower().replace('tt', '').strip()
@@ -122,7 +119,6 @@ class DatasetLoader:
             namelist = zf.namelist()
             matched_file = None
             
-            # Filter rule_based_annotations JSON files
             annot_files = [
                 f for f in namelist 
                 if 'screenplay_data/data/rule_based_annotations/' in f and f.endswith('.json')
@@ -130,14 +126,12 @@ class DatasetLoader:
             if not annot_files:
                 annot_files = [f for f in namelist if 'rule_based_annotations' in f and f.endswith('.json')]
 
-            # 1. Match by IMDB ID (7-digit zfill or raw ID)
             for f in annot_files:
                 basename = os.path.basename(f)
                 if f"_{padded_id}.json" in basename or f"_{raw_id}.json" in basename:
                     matched_file = f
                     break
 
-            # 2. Match by normalized Title fallback if IMDB ID match not found
             if not matched_file and meta:
                 clean_target_title = re.sub(r'[^a-zA-Z0-9]', '', meta.title).lower()
                 for f in annot_files:
@@ -156,7 +150,6 @@ class DatasetLoader:
             scenes: List[SceneSegment] = []
             scene_idx = 1
 
-            # Outer list represents scenes/segments
             for scene_data in raw_json:
                 if not isinstance(scene_data, list):
                     continue
@@ -224,6 +217,5 @@ class DatasetLoader:
                 scenes.append(scene_segment)
                 scene_idx += 1
 
-            # Apply estimated timestamps
             scenes = TimestampParser.estimate_screenplay_timestamps(scenes)
             return scenes

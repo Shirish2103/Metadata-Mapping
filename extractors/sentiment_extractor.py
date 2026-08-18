@@ -21,11 +21,6 @@ class SentimentExtractor(BaseExtractor):
             self.nlp = None
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedSentiment:
-        """
-        Analyzes sentiment tone and emotional context using spaCy syntactic analysis 
-        and Generative AI zero-shot emotion classification.
-        No hardcoded word dictionaries used.
-        """
         full_text_list = []
         for sc in scenes:
             if sc.action_text:
@@ -40,7 +35,6 @@ class SentimentExtractor(BaseExtractor):
         if not combined_text.strip():
             return ExtractedSentiment(sentiment="Neutral", emotions=[], confidence=0.5)
 
-        # 1. spaCy Syntactic & POS Polarity Scoring
         pos_count = 0
         neg_count = 0
         emotions_found: Set[str] = set()
@@ -48,7 +42,6 @@ class SentimentExtractor(BaseExtractor):
         if self.nlp:
             doc = self.nlp(combined_text[:5000])
             for token in doc:
-                # Use spaCy token sentiment vector / POS orientation heuristics if available
                 if token.pos_ in {"ADJ", "ADV", "VERB"}:
                     lemma = token.lemma_.lower()
                     if token.sentiment > 0:
@@ -70,7 +63,6 @@ class SentimentExtractor(BaseExtractor):
 
         confidence = 0.85
 
-        # 2. Generative AI LLM Sentiment & Emotion Classification
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
             try:
@@ -102,7 +94,7 @@ class SentimentExtractor(BaseExtractor):
                     if "confidence" in parsed and isinstance(parsed["confidence"], (int, float)):
                         confidence = float(parsed["confidence"])
             except Exception:
-                pass  # Fallback to pure NLP output
+                pass
 
         if not emotions_found:
             emotions_found = {"Happiness", "Excitement"} if overall_sentiment == "Positive" else {"Anger", "Fear"} if overall_sentiment == "Negative" else {"Neutral"}

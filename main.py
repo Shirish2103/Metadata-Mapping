@@ -36,7 +36,7 @@ def print_pretty_dialogue_breakdown(result_dict: dict):
         print("  (No dialogues found in this timestamp range)")
     else:
         current_loc = None
-        for item in dialogues[:35]:  # Display top 35 dialogues formatted
+        for item in dialogues[:35]:
             loc = item.get("location") or "SCENE"
             ts = item.get("timestamp", "00:00:00")
             spk = item.get("speaker", "Unknown")
