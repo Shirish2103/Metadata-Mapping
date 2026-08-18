@@ -8,7 +8,7 @@ from models.schema import (
 )
 from data.dataset_loader import DatasetLoader
 from data.db_manager import DatabaseManager
-from data.timestamp_parser import TimestampParser
+from data.timestamp_parser import TimestampParser, timestamp_to_seconds, format_seconds_to_timestamp
 from extractors.topic_extractor import TopicExtractor
 from extractors.entity_extractor import EntityExtractor
 from extractors.sentiment_extractor import SentimentExtractor
@@ -55,6 +55,11 @@ class MetadataProcessor:
 
         self.db.save_scenes(movie_info.imdb_id, scenes)
 
+        full_movie_start = scenes[0].time_range.start_time if (scenes and scenes[0].time_range) else "00:00:00"
+        full_movie_end = scenes[-1].time_range.end_time if (scenes and scenes[-1].time_range) else "00:00:00"
+        full_dur_sec = max(0.0, timestamp_to_seconds(full_movie_end) - timestamp_to_seconds(full_movie_start))
+        full_total_duration_str = format_seconds_to_timestamp(full_dur_sec)
+
         is_windowed = False
         if start_time or end_time:
             s_ts = start_time if start_time else "00:00:00"
@@ -76,7 +81,12 @@ class MetadataProcessor:
             actual_start = start_time if start_time else "00:00:00"
             actual_end = end_time if end_time else "00:00:00"
 
-        overall_time_range = TimeRange(start_time=actual_start, end_time=actual_end, is_estimated=True)
+        overall_time_range = TimeRange(
+            start_time=actual_start,
+            end_time=actual_end,
+            total_duration=full_total_duration_str,
+            is_estimated=True
+        )
 
         if is_windowed:
             movie_info = movie_info.model_copy(deep=True)
@@ -118,6 +128,7 @@ class MetadataProcessor:
             title=movie_info.title + (f" [{actual_start} - {actual_end}]" if is_windowed else ""),
             movie_info=movie_info,
             time_range=overall_time_range,
+            total_duration=full_total_duration_str,
             topics=topics,
             entities=entities,
             sentiment=sentiment,
@@ -175,9 +186,17 @@ class MetadataProcessor:
                 )
             )
 
-        start_ts = srt_blocks[0].get("start_time", "00:00:00")
-        end_ts = srt_blocks[-1].get("end_time", "00:00:00")
-        overall_tr = TimeRange(start_time=start_ts, end_time=end_ts, is_estimated=False)
+        full_srt_start = srt_blocks[0].get("start_time", "00:00:00")
+        full_srt_end = srt_blocks[-1].get("end_time", "00:00:00")
+        full_dur_sec = max(0.0, timestamp_to_seconds(full_srt_end) - timestamp_to_seconds(full_srt_start))
+        full_total_duration_str = format_seconds_to_timestamp(full_dur_sec)
+
+        overall_tr = TimeRange(
+            start_time=start_time if start_time else full_srt_start,
+            end_time=end_time if end_time else full_srt_end,
+            total_duration=full_total_duration_str,
+            is_estimated=False
+        )
 
         scene = SceneSegment(
             scene_idx=1,
@@ -191,7 +210,7 @@ class MetadataProcessor:
         is_windowed = False
         if start_time or end_time:
             s_ts = start_time if start_time else "00:00:00"
-            e_ts = end_time if end_time else end_ts
+            e_ts = end_time if end_time else full_srt_end
             scenes = TimestampParser.filter_scenes_by_timerange(scenes, s_ts, e_ts)
             is_windowed = True
         plot_summary = f"External timestamped transcript [{overall_tr.start_time} - {overall_tr.end_time}]" if is_windowed else "External timestamped transcript"
@@ -232,6 +251,7 @@ class MetadataProcessor:
             title=title + (f" [{overall_tr.start_time} - {overall_tr.end_time}]" if is_windowed else ""),
             movie_info=movie_info,
             time_range=overall_tr,
+            total_duration=full_total_duration_str,
             topics=topics,
             entities=entities,
             sentiment=sentiment,

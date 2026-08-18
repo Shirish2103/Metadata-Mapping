@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class TimeRange(BaseModel):
     start_time: str = Field(description="Formatted timestamp e.g. 00:01:15")
     end_time: str = Field(description="Formatted timestamp e.g. 00:03:40")
+    total_duration: Optional[str] = Field(default=None, description="Formatted total runtime duration e.g. 02:04:05")
     is_estimated: bool = Field(default=False, description="True if estimated via pacing rules")
 
 class MovieMetadata(BaseModel):
@@ -81,6 +82,7 @@ class ScriptMetadataResult(BaseModel):
     title: str
     movie_info: Optional[MovieMetadata] = None
     time_range: Optional[TimeRange] = None
+    total_duration: Optional[str] = Field(default=None, description="Formatted total runtime duration e.g. 02:04:05")
     topics: ExtractedTopics
     entities: ExtractedEntities
     sentiment: ExtractedSentiment

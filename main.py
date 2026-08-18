@@ -24,12 +24,13 @@ def print_character_presence_table(result_dict: dict):
     presence_data = result_dict.get("character_presence", {}) or {}
     characters = presence_data.get("characters", [])
     total_scenes = presence_data.get("total_movie_scenes", 0)
+    tot_dur = result_dict.get("total_duration") or result_dict.get("time_range", {}).get("total_duration", "N/A")
 
     if not characters:
         return
 
     print("\n" + "=" * 105)
-    print(f" ⏱️ CHARACTER SCENE PRESENCE & SCREEN TIME PACING (Total Scenes: {total_scenes})")
+    print(f" ⏱️ CHARACTER SCENE PRESENCE & SCREEN TIME PACING (Total Scenes: {total_scenes} | Movie Duration: {tot_dur})")
     print("=" * 105)
     print(f" {'Character':<20} | {'Role':<10} | {'Screen Time %':<13} | {'Scenes':<8} | {'Lines':<6} | {'Entry [Scene (TS)]':<18} | {'Exit [Scene (TS)]':<18}")
     print("-" * 105)
@@ -54,11 +55,14 @@ def print_pretty_dialogue_breakdown(result_dict: dict):
     time_range = result_dict.get("time_range", {}) or {}
     s_time = time_range.get("start_time", "00:00:00")
     e_time = time_range.get("end_time", "00:00:00")
+    tot_dur = result_dict.get("total_duration") or time_range.get("total_duration") or "N/A"
     title = result_dict.get("title", "Movie Transcript")
     speakers = result_dict.get("speaker_list", [])
 
     print(f"\n" + "=" * 80)
-    print(f" TIMELINE DIALOGUE BREAKDOWN [{s_time} - {e_time}] : {title}")
+    print(f" TIMELINE DIALOGUE BREAKDOWN [{s_time} - {e_time}]")
+    print(f" Title                  : {title}")
+    print(f" ⏱️ Total Movie Duration : {tot_dur}")
     print("=" * 80)
 
     if not dialogues:
@@ -134,8 +138,13 @@ def main():
             print_pretty_dialogue_breakdown(res_dict)
             print("=======================================================")
             print(f" Extracted Metadata Result: {result.title} ({result.imdb_id})")
+            print(f" ⏱️ Total Movie Duration: {result.total_duration}")
             print("=======================================================")
             print(json.dumps(res_dict, indent=2))
+            print("\n" + "=" * 60)
+            print(f" ⏱️ TOTAL MOVIE DURATION  : {result.total_duration}")
+            print(f" 🎯 TIME WINDOW PROCESSED : [{args.start or '00:00:00'} - {args.end or result.total_duration}]")
+            print("=" * 60)
             print("\n[DB] Successfully stored metadata in SQLite (data/transcript_metadata.db)!\n")
         except Exception as e:
             print(f"\n[Error] Processing failed: {e}\n")
@@ -151,8 +160,13 @@ def main():
             print_pretty_dialogue_breakdown(res_dict)
             print("=======================================================")
             print(f" Extracted Metadata Result: {result.title}")
+            print(f" ⏱️ Total Movie Duration: {result.total_duration}")
             print("=======================================================")
             print(json.dumps(res_dict, indent=2))
+            print("\n" + "=" * 60)
+            print(f" ⏱️ TOTAL MOVIE DURATION  : {result.total_duration}")
+            print(f" 🎯 TIME WINDOW PROCESSED : [{args.start or '00:00:00'} - {args.end or result.total_duration}]")
+            print("=" * 60)
             print("\n[DB] Successfully stored SRT metadata in SQLite!\n")
         except Exception as e:
             print(f"\n[Error] SRT Processing failed: {e}\n")
