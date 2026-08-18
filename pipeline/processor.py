@@ -3,7 +3,7 @@ import yaml
 from typing import List, Dict, Any, Optional
 from models.schema import (
     MovieMetadata, SceneSegment, Dialogue, ScriptMetadataResult, TimeRange,
-    ExtractedTopics, ExtractedEntities, ExtractedSentiment, ExtractedCategory
+    ExtractedTopics, ExtractedEntities, ExtractedSentiment, ExtractedCategory, DialogueEntry
 )
 from data.dataset_loader import DatasetLoader
 from data.db_manager import DatabaseManager
@@ -98,12 +98,22 @@ class MetadataProcessor:
             else:
                 movie_info.plot = f"No scene activity found between {actual_start} and {actual_end}."
 
-        # Collect unique speakers
+        # Collect unique speakers and windowed dialogues
         speakers = set()
+        dialogues_in_window = []
         for sc in scenes:
+            scene_ts = sc.time_range.start_time if sc.time_range else "00:00:00"
             for d in sc.dialogues:
                 if d.speaker:
                     speakers.add(d.speaker.title())
+                    dialogues_in_window.append(
+                        DialogueEntry(
+                            timestamp=d.time_range.start_time if d.time_range else scene_ts,
+                            speaker=d.speaker.title(),
+                            text=d.text,
+                            location=sc.location
+                        )
+                    )
 
         # 6. Aggregate into Pydantic ScriptMetadataResult
         result = ScriptMetadataResult(
@@ -116,7 +126,8 @@ class MetadataProcessor:
             sentiment=sentiment,
             category=category,
             scene_breakdown_count=len(scenes),
-            speaker_list=sorted(list(speakers))[:20]
+            speaker_list=sorted(list(speakers))[:20],
+            dialogues_in_window=dialogues_in_window
         )
 
         # 7. Persist to SQLite
@@ -187,13 +198,6 @@ class MetadataProcessor:
             e_ts = end_time if end_time else end_ts
             scenes = TimestampParser.filter_scenes_by_timerange(scenes, s_ts, e_ts)
             is_windowed = True
-            overall_tr = TimeRange(start_time=s_ts, end_time=e_ts, is_estimated=False)
-            speakers = set()
-            for sc in scenes:
-                for d in sc.dialogues:
-                    if d.speaker:
-                        speakers.add(d.speaker)
-
         plot_summary = f"External timestamped transcript [{overall_tr.start_time} - {overall_tr.end_time}]" if is_windowed else "External timestamped transcript"
 
         movie_info = MovieMetadata(
@@ -209,6 +213,23 @@ class MetadataProcessor:
         sentiment = self.sentiment_extractor.extract(movie_info, scenes)
         category = self.category_extractor.extract(movie_info, scenes)
 
+        # Collect unique speakers and windowed dialogues
+        dialogues_in_window = []
+        speakers = set()
+        for sc in scenes:
+            scene_ts = sc.time_range.start_time if sc.time_range else "00:00:00"
+            for d in sc.dialogues:
+                if d.speaker:
+                    speakers.add(d.speaker.title())
+                    dialogues_in_window.append(
+                        DialogueEntry(
+                            timestamp=d.time_range.start_time if d.time_range else scene_ts,
+                            speaker=d.speaker.title(),
+                            text=d.text,
+                            location=sc.location
+                        )
+                    )
+
         result = ScriptMetadataResult(
             imdb_id=imdb_id,
             title=title + (f" [{overall_tr.start_time} - {overall_tr.end_time}]" if is_windowed else ""),
@@ -219,7 +240,8 @@ class MetadataProcessor:
             sentiment=sentiment,
             category=category,
             scene_breakdown_count=len(scenes),
-            speaker_list=sorted(list(speakers))
+            speaker_list=sorted(list(speakers)),
+            dialogues_in_window=dialogues_in_window
         )
 
         self.db.save_extracted_metadata(result)

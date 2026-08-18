@@ -55,6 +55,12 @@ class ExtractedCategory(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: Optional[str] = None
 
+class DialogueEntry(BaseModel):
+    timestamp: str = Field(default="00:00:00")
+    speaker: str
+    text: str
+    location: Optional[str] = None
+
 class ScriptMetadataResult(BaseModel):
     imdb_id: str
     title: str
@@ -66,3 +72,4 @@ class ScriptMetadataResult(BaseModel):
     category: ExtractedCategory
     scene_breakdown_count: int = 0
     speaker_list: List[str] = Field(default_factory=list)
+    dialogues_in_window: List[DialogueEntry] = Field(default_factory=list)
