@@ -22,8 +22,8 @@ class TopicExtractor(BaseExtractor):
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedTopics:
         """
-        Extracts topics, subjects, and keywords using TF-IDF Vectorization, 
-        spaCy POS tagging (Nouns/Adjectives), Lemmatization, and LLM Generative AI.
+        Extracts topics, subjects, and keywords using pure statistical NLP (spaCy POS tagging,
+        Dependency parsing, NER filtering, TF-IDF vectorization) and Generative AI.
         No hardcoded word lists used.
         """
         full_text_list = []
@@ -40,28 +40,36 @@ class TopicExtractor(BaseExtractor):
         if not combined_text.strip():
             return ExtractedTopics(main_topics=[], subjects=[], frequently_mentioned_terms=[], keywords=[])
 
-        # 1. NLP Processing using spaCy (POS Tagging & Lemmatization)
-        lemmatized_tokens = []
-        noun_adj_tokens = []
-        if self.nlp:
-            doc = self.nlp(combined_text[:30000])
-            for token in doc:
-                if not token.is_stop and not token.is_punct and not token.is_space and not token.like_num and len(token.lemma_) > 2:
-                    lemma = token.lemma_.lower()
-                    lemmatized_tokens.append(lemma)
-                    if token.pos_ in {"NOUN", "PROPN", "ADJ"}:
-                        noun_adj_tokens.append(lemma)
-        else:
-            words = re.findall(r'\b[A-Za-z]{3,}\b', combined_text.lower())
-            lemmatized_tokens = words
-            noun_adj_tokens = words
+        # 1. Linguistic NLP Filtering via spaCy (POS Tagging, Dependency Parsing & NER)
+        noun_lemmas = []
+        doc_chunks = []
 
-        # 2. Dynamic TF-IDF Calculation for Keywords & Phrase Extraction
+        if self.nlp:
+            # Process text with spaCy pipeline
+            doc = self.nlp(combined_text[:35000])
+            
+            for token in doc:
+                # Dynamic NLP filtering criteria:
+                # Must be NOUN or PROPN, syntactically meaningful (subject/object/root),
+                # not a stopword, punctuation, number, or tagged as PERSON/DATE/TIME entity
+                if (
+                    token.pos_ in {"NOUN", "PROPN"}
+                    and not token.is_stop
+                    and not token.is_punct
+                    and not token.like_num
+                    and len(token.lemma_) > 2
+                    and token.ent_type_ not in {"PERSON", "DATE", "TIME", "CARDINAL", "QUANTITY", "PERCENT"}
+                    and token.dep_ in {"nsubj", "dobj", "pobj", "ROOT", "attr", "compound"}
+                ):
+                    noun_lemmas.append(token.lemma_.lower())
+
+        # 2. Dynamic TF-IDF Calculation on Pure NLP Noun Lemmas
         freq_terms = []
         keywords = []
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
-            # Split scene texts into doc chunks for TF-IDF calculation
+            
+            # Group scene texts into document chunks for TF-IDF scoring
             doc_chunks = [sc.action_text + " " + " ".join([d.text for d in sc.dialogues]) for sc in scenes if sc.action_text or sc.dialogues]
             if not doc_chunks:
                 doc_chunks = [combined_text]
@@ -82,40 +90,33 @@ class TopicExtractor(BaseExtractor):
             freq_terms = keywords[:10]
         except Exception:
             from collections import Counter
-            counts = Counter(noun_adj_tokens)
+            counts = Counter(noun_lemmas)
             ranked = [word for word, _ in counts.most_common(20)]
             keywords = ranked[:15]
             freq_terms = ranked[:10]
 
-        # 3. Dynamic Topic & Subject Grouping
+        # 3. Dynamic Topic Initialisation from Movie Genres & Top Extracted Keywords
         main_topics = []
         if movie_info and movie_info.genres:
             for g in movie_info.genres:
                 if g not in main_topics and g.lower() not in {"entertainment", "other"}:
                     main_topics.append(g)
 
-        for kw in keywords:
-            kw_title = kw.title()
-            if kw_title not in main_topics:
-                main_topics.append(kw_title)
-            if len(main_topics) >= 5:
-                break
+        subjects = [kw.title() for kw in keywords[2:8]] if len(keywords) >= 8 else [kw.title() for kw in keywords[:5]]
 
-        subjects = [kw.title() for kw in keywords[3:10]] if len(keywords) >= 8 else [kw.title() for kw in keywords[:5]]
-
-        # 4. Generative AI LLM Zero-Shot Enhancement (if API Key present)
+        # 4. Generative AI LLM Zero-Shot High-Level Semantic Extraction (if API Key present)
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
             try:
                 from google import genai
                 client = genai.Client(api_key=api_key)
                 prompt = (
-                    f"Perform NLP topic extraction on this transcript text.\n"
+                    f"Perform high-level thematic topic extraction on this movie transcript.\n"
                     f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-                    f"Text Sample: {combined_text[:2000]}\n"
-                    f"Top TF-IDF Terms: {', '.join(keywords[:10])}\n"
-                    f"Extract high-level thematic metadata in JSON format:\n"
-                    f"{{\"main_topics\": [3-5 main themes], \"subjects\": [4-6 specific subjects], \"keywords\": [8-12 keywords]}}"
+                    f"Plot/Sample Text: {combined_text[:2000]}\n"
+                    f"Top NLP Keywords: {', '.join(keywords[:10])}\n\n"
+                    f"Return ONLY valid JSON with abstract thematic topics and subjects (exclude character names, numbers, script directions):\n"
+                    f"{{\"main_topics\": [3-5 abstract themes/genres], \"subjects\": [4-6 specific sub-topics], \"keywords\": [8-12 thematic keywords]}}"
                 )
                 response = client.models.generate_content(
                     model=self.config.get("llm", {}).get("model_name", "gemini-2.5-flash"),
@@ -126,13 +127,16 @@ class TopicExtractor(BaseExtractor):
                     json_str = re.sub(r'```json\s*|\s*```', '', response.text).strip()
                     parsed = json.loads(json_str)
                     if "main_topics" in parsed and isinstance(parsed["main_topics"], list):
-                        main_topics = parsed["main_topics"]
+                        if parsed["main_topics"]:
+                            main_topics = [t.title() for t in parsed["main_topics"] if isinstance(t, str)]
                     if "subjects" in parsed and isinstance(parsed["subjects"], list):
-                        subjects = parsed["subjects"]
+                        if parsed["subjects"]:
+                            subjects = [s.title() for s in parsed["subjects"] if isinstance(s, str)]
                     if "keywords" in parsed and isinstance(parsed["keywords"], list):
-                        keywords = parsed["keywords"]
+                        if parsed["keywords"]:
+                            keywords = [k.lower() for k in parsed["keywords"] if isinstance(k, str)]
             except Exception:
-                pass  # Fallback to pure NLP output
+                pass  # Fallback to statistical NLP output
 
         return ExtractedTopics(
             main_topics=main_topics[:6],

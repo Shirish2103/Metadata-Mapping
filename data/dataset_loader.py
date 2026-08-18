@@ -3,6 +3,7 @@ import zipfile
 import csv
 import json
 import io
+import re
 from typing import List, Dict, Any, Optional
 from models.schema import MovieMetadata, SceneSegment, Dialogue, TimeRange
 from data.timestamp_parser import TimestampParser
@@ -12,6 +13,37 @@ class DatasetLoader:
         self.archive_path = archive_path
         self._movie_meta_cache: Dict[str, MovieMetadata] = {}
         self._filename_map: Dict[str, str] = {}
+        self.nlp = None
+        try:
+            import spacy
+            self.nlp = spacy.load("en_core_web_sm")
+        except Exception:
+            self.nlp = None
+
+    def _is_valid_speaker_nlp(self, speaker_candidate: str) -> Optional[str]:
+        if not speaker_candidate:
+            return None
+        cand = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', str(speaker_candidate)).strip()
+        cand = re.sub(r'\(.*?\)', '', cand).strip()
+        
+        if not cand or len(cand) <= 1 or len(cand.split()) > 3:
+            return None
+            
+        if self.nlp:
+            doc = self.nlp(cand)
+            for token in doc:
+                if token.pos_ in {"NUM", "VERB", "PUNCT", "AUX", "DET", "ADP", "SCONJ", "CCONJ", "SYM"}:
+                    return None
+                if token.like_num or token.is_punct or token.is_space:
+                    return None
+            for ent in doc.ents:
+                if ent.label_ in {"DATE", "TIME", "CARDINAL", "MONEY", "QUANTITY", "PERCENT", "ORDINAL"}:
+                    return None
+        else:
+            if re.search(r'\d+', cand) or any(c in cand for c in ['"', '...', '!', '?', ';']):
+                return None
+                
+        return cand.title()
 
     def _ensure_zip_open(self):
         if not os.path.exists(self.archive_path):
@@ -83,15 +115,35 @@ class DatasetLoader:
         """Loads rule-based JSON screenplays for a movie and returns structured SceneSegments."""
         meta = self.load_movie_metadata(imdb_id_or_title)
         target_id = meta.imdb_id if meta else imdb_id_or_title
+        raw_id = target_id.lower().replace('tt', '').strip()
+        padded_id = raw_id.zfill(7)
 
         with self._ensure_zip_open() as zf:
             namelist = zf.namelist()
-            # Find matching rule_based_annotations json file
             matched_file = None
-            for f in namelist:
-                if 'rule_based_annotations/' in f and f.endswith('.json'):
+            
+            # Filter rule_based_annotations JSON files
+            annot_files = [
+                f for f in namelist 
+                if 'screenplay_data/data/rule_based_annotations/' in f and f.endswith('.json')
+            ]
+            if not annot_files:
+                annot_files = [f for f in namelist if 'rule_based_annotations' in f and f.endswith('.json')]
+
+            # 1. Match by IMDB ID (7-digit zfill or raw ID)
+            for f in annot_files:
+                basename = os.path.basename(f)
+                if f"_{padded_id}.json" in basename or f"_{raw_id}.json" in basename:
+                    matched_file = f
+                    break
+
+            # 2. Match by normalized Title fallback if IMDB ID match not found
+            if not matched_file and meta:
+                clean_target_title = re.sub(r'[^a-zA-Z0-9]', '', meta.title).lower()
+                for f in annot_files:
                     basename = os.path.basename(f)
-                    if f"_{target_id}.json" in basename or (meta and meta.title.lower() in basename.lower()):
+                    clean_file_title = re.sub(r'[^a-zA-Z0-9]', '', basename.rsplit('_', 1)[0]).lower()
+                    if clean_target_title and (clean_target_title in clean_file_title or clean_file_title in clean_target_title):
                         matched_file = f
                         break
 
@@ -129,20 +181,28 @@ class DatasetLoader:
                         if head_text.get("location"):
                             loc_val = head_text.get("location")
                             if isinstance(loc_val, list):
-                                location = " ".join(loc_val)
+                                items = []
+                                for item in loc_val:
+                                    if isinstance(item, list):
+                                        items.append(" ".join(str(i) for i in item))
+                                    else:
+                                        items.append(str(item))
+                                location = " ".join(items)
                             elif isinstance(loc_val, str):
                                 location = loc_val
                         if head_text.get("ToD"):
                             time_of_day = head_text.get("ToD")
 
-                    speaker = None
+                    raw_speaker = None
                     if isinstance(head_text, dict):
                         if head_text.get("speaker/title"):
-                            speaker = str(head_text.get("speaker/title")).strip()
+                            raw_speaker = str(head_text.get("speaker/title")).strip()
                         elif head_text.get("subj"):
-                            speaker = str(head_text.get("subj")).strip()
+                            raw_speaker = str(head_text.get("subj")).strip()
 
-                    if head_type == "speaker/title" or speaker:
+                    speaker = self._is_valid_speaker_nlp(raw_speaker)
+
+                    if (head_type == "speaker/title" and speaker) or speaker:
                         if text:
                             dialogues.append(Dialogue(
                                 speaker=speaker if speaker else "Unknown",

@@ -1,6 +1,9 @@
 import argparse
 import json
 import sys
+import warnings
+warnings.filterwarnings("ignore")
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -16,8 +19,8 @@ def main():
         description="AI-Powered Transcript Metadata Extraction Platform"
     )
     parser.add_argument("--list", action="store_true", help="List available movie transcripts")
-    parser.add_argument("--process", type=str, help="Process a movie transcript by Title or IMDB ID")
-    parser.add_argument("--process-srt", type=str, help="Process an external SRT transcript file")
+    parser.add_argument("--process", "--movie", "-m", type=str, help="Process a movie transcript by Title or IMDB ID")
+    parser.add_argument("--process-srt", "--srt", "-s", type=str, help="Process an external SRT transcript file")
     parser.add_argument("--start", type=str, help="Start time for time-window extraction (e.g. 00:10:00 or 10:00)")
     parser.add_argument("--end", type=str, help="End time for time-window extraction (e.g. 00:25:00 or 25:00)")
     parser.add_argument("--query", type=str, help="Query extracted metadata from database by Title or IMDB ID")
