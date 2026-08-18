@@ -1,0 +1,199 @@
+import sqlite3
+import json
+import os
+from typing import List, Dict, Any, Optional
+from models.schema import MovieMetadata, SceneSegment, ScriptMetadataResult
+
+class DatabaseManager:
+    def __init__(self, db_path: str = "data/transcript_metadata.db"):
+        self.db_path = db_path
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+        self.init_db()
+
+    def get_connection(self):
+        return sqlite3.connect(self.db_path)
+
+    def init_db(self):
+        """Initializes database schema tables."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Movies Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS movies (
+                    imdb_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    year TEXT,
+                    genres TEXT,
+                    directors TEXT,
+                    writers TEXT,
+                    plot TEXT
+                )
+            """)
+
+            # Scenes Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scenes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    imdb_id TEXT NOT NULL,
+                    scene_idx INTEGER NOT NULL,
+                    location TEXT,
+                    start_time TEXT,
+                    end_time TEXT,
+                    is_estimated BOOLEAN,
+                    raw_text TEXT,
+                    FOREIGN KEY (imdb_id) REFERENCES movies(imdb_id)
+                )
+            """)
+
+            # Dialogues Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dialogues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    imdb_id TEXT NOT NULL,
+                    scene_idx INTEGER NOT NULL,
+                    speaker TEXT NOT NULL,
+                    start_time TEXT,
+                    end_time TEXT,
+                    text TEXT NOT NULL,
+                    FOREIGN KEY (imdb_id) REFERENCES movies(imdb_id)
+                )
+            """)
+
+            # Extracted Metadata Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS extracted_metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    imdb_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    primary_category TEXT,
+                    sentiment TEXT,
+                    emotions TEXT,
+                    main_topics TEXT,
+                    keywords TEXT,
+                    people_entities TEXT,
+                    location_entities TEXT,
+                    org_entities TEXT,
+                    full_json TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (imdb_id) REFERENCES movies(imdb_id)
+                )
+            """)
+            conn.commit()
+
+    def save_movie(self, meta: MovieMetadata):
+        """Saves or updates movie metadata record."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO movies (imdb_id, title, year, genres, directors, writers, plot)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                meta.imdb_id,
+                meta.title,
+                meta.year,
+                ", ".join(meta.genres),
+                ", ".join(meta.directors),
+                ", ".join(meta.writers),
+                meta.plot
+            ))
+            conn.commit()
+
+    def save_scenes(self, imdb_id: str, scenes: List[SceneSegment]):
+        """Saves scene segments and dialogues."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM scenes WHERE imdb_id = ?", (imdb_id,))
+            cursor.execute("DELETE FROM dialogues WHERE imdb_id = ?", (imdb_id,))
+
+            for sc in scenes:
+                start_ts = sc.time_range.start_time if sc.time_range else "00:00:00"
+                end_ts = sc.time_range.end_time if sc.time_range else "00:00:00"
+                is_est = sc.time_range.is_estimated if sc.time_range else False
+
+                cursor.execute("""
+                    INSERT INTO scenes (imdb_id, scene_idx, location, start_time, end_time, is_estimated, raw_text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (imdb_id, sc.scene_idx, sc.location, start_ts, end_ts, is_est, sc.action_text))
+
+                for d in sc.dialogues:
+                    d_start = d.time_range.start_time if d.time_range else start_ts
+                    d_end = d.time_range.end_time if d.time_range else end_ts
+                    cursor.execute("""
+                        INSERT INTO dialogues (imdb_id, scene_idx, speaker, start_time, end_time, text)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (imdb_id, sc.scene_idx, d.speaker, d_start, d_end, d.text))
+
+            conn.commit()
+
+    def save_extracted_metadata(self, result: ScriptMetadataResult):
+        """Saves extracted metadata result into SQLite."""
+        if result.movie_info:
+            self.save_movie(result.movie_info)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM extracted_metadata WHERE imdb_id = ?", (result.imdb_id,))
+            
+            full_json = result.model_dump_json()
+
+            cursor.execute("""
+                INSERT INTO extracted_metadata (
+                    imdb_id, title, primary_category, sentiment, emotions,
+                    main_topics, keywords, people_entities, location_entities, org_entities, full_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                result.imdb_id,
+                result.title,
+                result.category.primary_category,
+                result.sentiment.sentiment,
+                ", ".join(result.sentiment.emotions),
+                ", ".join(result.topics.main_topics),
+                ", ".join(result.topics.keywords),
+                ", ".join(result.entities.people),
+                ", ".join(result.entities.locations),
+                ", ".join(result.entities.organizations),
+                full_json
+            ))
+            conn.commit()
+
+    def get_metadata(
+        self, 
+        imdb_id_or_title: str, 
+        start_time: Optional[str] = None, 
+        end_time: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieves stored metadata for a movie by IMDB ID or Title, optionally filtered by time duration."""
+        target = imdb_id_or_title.strip().lower()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if start_time or end_time:
+                s_ts = start_time if start_time else "00:00:00"
+                e_ts = end_time if end_time else "99:59:59"
+                cursor.execute("""
+                    SELECT full_json FROM extracted_metadata 
+                    WHERE (LOWER(imdb_id) = ? OR LOWER(title) LIKE ?) 
+                    AND (title LIKE ? OR full_json LIKE ? OR full_json LIKE ?)
+                    ORDER BY id DESC
+                """, (
+                    target, 
+                    f"%{target}%", 
+                    f"%[{s_ts}%", 
+                    f'%"start_time": "{s_ts}"%', 
+                    f'%"end_time": "{e_ts}"%'
+                ))
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+
+            cursor.execute("""
+                SELECT full_json FROM extracted_metadata 
+                WHERE LOWER(imdb_id) = ? OR LOWER(title) LIKE ?
+                ORDER BY id DESC
+            """, (target, f"%{target}%"))
+            row = cursor.fetchone()
+            if row:
+                return json.loads(row[0])
+        return None

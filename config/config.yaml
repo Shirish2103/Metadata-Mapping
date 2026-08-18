@@ -1,0 +1,52 @@
+dataset:
+  archive_path: "d:\\Downloads\\archive.zip"
+  movie_metadata_file: "movie_metadata/movie_meta_data.csv"
+  rule_based_dir: "screenplay_data/data/rule_based_annotations/rule_based_annotations/"
+  bert_dir: "screenplay_data/data/BERT_annotations/BERT_annotations/"
+
+database:
+  db_path: "data/transcript_metadata.db"
+
+categories:
+  - News
+  - Entertainment
+  - Education
+  - Sports
+  - Drama
+  - Comedy
+  - Action
+  - Romance
+  - Crime
+  - Politics
+  - Business
+  - Sci-Fi
+  - Thriller
+  - Horror
+  - Other
+
+emotions:
+  - Happiness
+  - Sadness
+  - Anger
+  - Fear
+  - Surprise
+  - Disgust
+  - Love
+  - Excitement
+  - Anxiety
+  - Determination
+
+sentiments:
+  - Positive
+  - Negative
+  - Neutral
+  - Mixed
+
+timestamp_estimation:
+  lines_per_minute: 22.0  # Industry standard: ~1 page (22 lines) per minute
+
+llm:
+  provider: "gemini"
+  model_name: "gemini-2.5-flash"
+  temperature: 0.2
+  max_output_tokens: 2048
