@@ -105,7 +105,7 @@ class TopicExtractor(BaseExtractor):
                     f"{{\"main_topics\": [3-5 abstract themes/genres], \"subjects\": [4-6 specific sub-topics], \"keywords\": [8-12 thematic keywords]}}"
                 )
                 response = client.models.generate_content(
-                    model=self.config.get("llm", {}).get("model_name", "gemini-2.5-flash"),
+                    model=self.config.get("llm", {}).get("model_name", "gemini-3.6-flash"),
                     contents=prompt
                 )
                 if response and response.text:

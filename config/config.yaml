@@ -48,6 +48,6 @@ timestamp_estimation:
 
 llm:
   provider: "gemini"
-  model_name: "gemini-2.5-flash"
+  model_name: "gemini-3.6-flash"
   temperature: 0.2
   max_output_tokens: 2048
