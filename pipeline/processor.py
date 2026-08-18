@@ -3,7 +3,8 @@ import yaml
 from typing import List, Dict, Any, Optional
 from models.schema import (
     MovieMetadata, SceneSegment, Dialogue, ScriptMetadataResult, TimeRange,
-    ExtractedTopics, ExtractedEntities, ExtractedSentiment, ExtractedCategory, DialogueEntry
+    ExtractedTopics, ExtractedEntities, ExtractedSentiment, ExtractedCategory, DialogueEntry,
+    CharacterPresenceReport
 )
 from data.dataset_loader import DatasetLoader
 from data.db_manager import DatabaseManager
@@ -12,6 +13,7 @@ from extractors.topic_extractor import TopicExtractor
 from extractors.entity_extractor import EntityExtractor
 from extractors.sentiment_extractor import SentimentExtractor
 from extractors.category_extractor import CategoryExtractor
+from extractors.character_presence_extractor import CharacterPresenceExtractor
 
 class MetadataProcessor:
     def __init__(self, config_path: str = "config/config.yaml"):
@@ -28,6 +30,8 @@ class MetadataProcessor:
         self.entity_extractor = EntityExtractor(self.config)
         self.sentiment_extractor = SentimentExtractor(self.config)
         self.category_extractor = CategoryExtractor(self.config)
+        self.character_presence_extractor = CharacterPresenceExtractor(self.config)
+
 
     def _load_config(self) -> Dict[str, Any]:
         if os.path.exists(self.config_path):
@@ -62,6 +66,8 @@ class MetadataProcessor:
         entities: ExtractedEntities = self.entity_extractor.extract(movie_info, scenes)
         sentiment: ExtractedSentiment = self.sentiment_extractor.extract(movie_info, scenes)
         category: ExtractedCategory = self.category_extractor.extract(movie_info, scenes)
+        character_presence: CharacterPresenceReport = self.character_presence_extractor.extract(movie_info, scenes)
+
 
         if scenes and scenes[0].time_range and scenes[-1].time_range:
             actual_start = start_time if start_time else scenes[0].time_range.start_time
@@ -118,8 +124,10 @@ class MetadataProcessor:
             category=category,
             scene_breakdown_count=len(scenes),
             speaker_list=sorted(list(speakers))[:20],
-            dialogues_in_window=dialogues_in_window
+            dialogues_in_window=dialogues_in_window,
+            character_presence=character_presence
         )
+
 
         self.db.save_extracted_metadata(result)
 
@@ -200,6 +208,8 @@ class MetadataProcessor:
         entities = self.entity_extractor.extract(movie_info, scenes)
         sentiment = self.sentiment_extractor.extract(movie_info, scenes)
         category = self.category_extractor.extract(movie_info, scenes)
+        character_presence = self.character_presence_extractor.extract(movie_info, scenes)
+
 
         dialogues_in_window = []
         speakers = set()
@@ -228,8 +238,10 @@ class MetadataProcessor:
             category=category,
             scene_breakdown_count=len(scenes),
             speaker_list=sorted(list(speakers)),
-            dialogues_in_window=dialogues_in_window
+            dialogues_in_window=dialogues_in_window,
+            character_presence=character_presence
         )
+
 
         self.db.save_extracted_metadata(result)
         return result

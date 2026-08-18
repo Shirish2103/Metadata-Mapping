@@ -61,6 +61,21 @@ class DialogueEntry(BaseModel):
     text: str
     location: Optional[str] = None
 
+class CharacterPresence(BaseModel):
+    character_name: str
+    first_scene_idx: int
+    last_scene_idx: int
+    first_timestamp: str = "00:00:00"
+    last_timestamp: str = "00:00:00"
+    scene_count: int = 0
+    screen_time_percentage: float = 0.0
+    dialogue_line_count: int = 0
+    role_type: str = "Minor"  # Lead, Supporting, Minor
+
+class CharacterPresenceReport(BaseModel):
+    total_movie_scenes: int = 0
+    characters: List[CharacterPresence] = Field(default_factory=list)
+
 class ScriptMetadataResult(BaseModel):
     imdb_id: str
     title: str
@@ -73,3 +88,5 @@ class ScriptMetadataResult(BaseModel):
     scene_breakdown_count: int = 0
     speaker_list: List[str] = Field(default_factory=list)
     dialogues_in_window: List[DialogueEntry] = Field(default_factory=list)
+    character_presence: Optional[CharacterPresenceReport] = None
+

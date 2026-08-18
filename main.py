@@ -20,6 +20,35 @@ from pipeline.processor import MetadataProcessor
 from data.dataset_loader import DatasetLoader
 from data.db_manager import DatabaseManager
 
+def print_character_presence_table(result_dict: dict):
+    presence_data = result_dict.get("character_presence", {}) or {}
+    characters = presence_data.get("characters", [])
+    total_scenes = presence_data.get("total_movie_scenes", 0)
+
+    if not characters:
+        return
+
+    print("\n" + "=" * 105)
+    print(f" ⏱️ CHARACTER SCENE PRESENCE & SCREEN TIME PACING (Total Scenes: {total_scenes})")
+    print("=" * 105)
+    print(f" {'Character':<20} | {'Role':<10} | {'Screen Time %':<13} | {'Scenes':<8} | {'Lines':<6} | {'Entry [Scene (TS)]':<18} | {'Exit [Scene (TS)]':<18}")
+    print("-" * 105)
+
+    for char in characters[:15]:
+        name = char.get("character_name", "Unknown")[:19]
+        role = char.get("role_type", "Minor")
+        st_pct = f"{char.get('screen_time_percentage', 0.0):.1f}%"
+        sc_cnt = str(char.get("scene_count", 0))
+        lines = str(char.get("dialogue_line_count", 0))
+        entry = f"Scene {char.get('first_scene_idx')} ({char.get('first_timestamp', '00:00:00')})"
+        exit_p = f"Scene {char.get('last_scene_idx')} ({char.get('last_timestamp', '00:00:00')})"
+
+        print(f" {name:<20} | {role:<10} | {st_pct:<13} | {sc_cnt:<8} | {lines:<6} | {entry:<18} | {exit_p:<18}")
+
+    if len(characters) > 15:
+        print(f" ... (+ {len(characters) - 15} more characters identified)")
+    print("=" * 105 + "\n")
+
 def print_pretty_dialogue_breakdown(result_dict: dict):
     dialogues = result_dict.get("dialogues_in_window", [])
     time_range = result_dict.get("time_range", {}) or {}
@@ -55,10 +84,14 @@ def print_pretty_dialogue_breakdown(result_dict: dict):
     print(f" Active Speakers ({len(speakers)}): {', '.join(speakers[:15])}")
     print("=" * 80 + "\n")
 
+    print_character_presence_table(result_dict)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="AI-Powered Transcript Metadata Extraction Platform"
     )
+    parser.add_argument("command_or_title", nargs="*", help="Process a movie by title e.g. analyze 'Full Metal Jacket' or 'Full Metal Jacket'")
     parser.add_argument("--list", action="store_true", help="List available movie transcripts")
     parser.add_argument("--process", "--movie", "-m", type=str, help="Process a movie transcript by Title or IMDB ID")
     parser.add_argument("--process-srt", "--srt", "-s", type=str, help="Process an external SRT transcript file")
@@ -68,6 +101,15 @@ def main():
     parser.add_argument("--config", type=str, default="config/config.yaml", help="Path to config.yaml")
 
     args = parser.parse_args()
+
+    # Determine target movie title if positional arguments are passed e.g. analyze "Full Metal Jacket"
+    target_movie = args.process
+    if not target_movie and args.command_or_title:
+        pos_args = args.command_or_title
+        if pos_args[0].lower() in {"analyze", "process"} and len(pos_args) > 1:
+            target_movie = " ".join(pos_args[1:])
+        else:
+            target_movie = " ".join(pos_args)
 
     processor = MetadataProcessor(config_path=args.config)
 
@@ -82,11 +124,12 @@ def main():
         print(f"... and {len(movies) - 25} more scripts available.\n")
         return
 
-    if args.process:
+    if target_movie:
         tw_info = f" (Time Window: {args.start} to {args.end})" if args.start or args.end else ""
-        print(f"\n[AI Pipeline] Processing script for: '{args.process}'{tw_info}...")
+        print(f"\n[AI Pipeline] Processing script for: '{target_movie}'{tw_info}...")
         try:
-            result = processor.process_transcript(args.process, start_time=args.start, end_time=args.end)
+            result = processor.process_transcript(target_movie, start_time=args.start, end_time=args.end)
+
             res_dict = result.model_dump()
             print_pretty_dialogue_breakdown(res_dict)
             print("=======================================================")

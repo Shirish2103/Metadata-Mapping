@@ -219,3 +219,19 @@ class DatasetLoader:
 
             scenes = TimestampParser.estimate_screenplay_timestamps(scenes)
             return scenes
+
+    def load_character_genders(self, imdb_id: str) -> Dict[str, str]:
+        raw_id = imdb_id.lower().replace('tt', '').strip().zfill(7)
+        try:
+            import pickle
+            with self._ensure_zip_open() as zf:
+                if 'movie_characters/data/character_genders.pickle' in zf.namelist():
+                    data = pickle.loads(zf.read('movie_characters/data/character_genders.pickle'))
+                    matched = data.get(raw_id) or data.get(raw_id.lstrip('0'))
+                    if matched:
+                        # returns {char_name: actor/actress}
+                        return {c[0].title(): c[1] for c in matched if len(c) >= 2}
+        except Exception:
+            pass
+        return {}
+
