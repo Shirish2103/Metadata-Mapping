@@ -69,14 +69,29 @@ class DatasetLoader:
                 self._csv_content_cache = f.read()
                 return self._csv_content_cache
 
-        # 2. Fallback to archive zip
-        if not os.path.exists(self.archive_path):
-            raise FileNotFoundError(f"Neither local dataset directory ({self.dataset_dir}) nor archive zip ({self.archive_path}) found.")
-        
-        with zipfile.ZipFile(self.archive_path, 'r') as zf:
-            with zf.open('movie_metadata/movie_meta_data.csv') as f:
-                self._csv_content_cache = f.read().decode('utf-8', errors='ignore')
-                return self._csv_content_cache
+        # 2. Try candidate zip archive locations
+        candidate_paths = [
+            self.archive_path,
+            os.path.join("data", "archive.zip"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "archive.zip"),
+            r"d:\Downloads\archive.zip"
+        ]
+
+        found_path = None
+        for p in candidate_paths:
+            if p and os.path.exists(p):
+                found_path = p
+                break
+
+        if found_path:
+            with zipfile.ZipFile(found_path, 'r') as zf:
+                with zf.open('movie_metadata/movie_meta_data.csv') as f:
+                    self._csv_content_cache = f.read().decode('utf-8', errors='ignore')
+                    return self._csv_content_cache
+
+        # Return fallback CSV header if no dataset zip present on cloud
+        self._csv_content_cache = "movie_id,movie_title,year,score,votes,language,country,cover_url,director,cast,genres,plot"
+        return self._csv_content_cache
 
     def get_available_movies(self) -> List[Dict[str, str]]:
         movies = []

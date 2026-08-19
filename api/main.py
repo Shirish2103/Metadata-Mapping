@@ -63,12 +63,33 @@ def health_check():
 
 @app.get("/api/movies", response_model=List[Dict[str, Any]])
 def list_available_movies():
-    """Returns a list of available movie scripts in the dataset archive."""
+    """Returns a list of available movie scripts in the dataset archive or database."""
+    movies = []
     try:
         movies = loader.get_available_movies()
-        return movies
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list movies: {str(e)}")
+    except Exception:
+        movies = []
+
+    # Supplement with stored movies from SQLite DB if available
+    try:
+        stored_records = db.get_all_metadata()
+        for r in stored_records:
+            if not any(m.get("imdb_id") == r.get("imdb_id") for m in movies):
+                movies.append({
+                    "imdb_id": r.get("imdb_id", "DB_REC"),
+                    "title": r.get("title", "Saved Movie"),
+                    "year": r.get("year", "2026"),
+                    "genres": r.get("genres", "Cached")
+                })
+    except Exception:
+        pass
+
+    if not movies:
+        movies = [
+            {"imdb_id": "SRT_MODE", "title": "📁 Custom SRT Subtitle Upload Mode", "year": "2026", "genres": "Subtitle Analysis"}
+        ]
+
+    return movies
 
 
 @app.post("/api/process", response_model=Dict[str, Any])
