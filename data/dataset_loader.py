@@ -123,51 +123,58 @@ class DatasetLoader:
         return movies
 
     def load_movie_metadata(self, imdb_id_or_title: str) -> Optional[MovieMetadata]:
-        target = imdb_id_or_title.strip().lower()
+        raw_target = imdb_id_or_title.strip()
+        target = raw_target.lower()
+        clean_target = re.sub(r'\s*\(\d{4}\)', '', target).strip()
         target_id = target.rsplit('_', 1)[-1] if '_' in target else target
+        clean_target_alnum = re.sub(r'[^a-zA-Z0-9]', '', clean_target)
 
-        # 1. Try CSV metadata first if available
+        # 1. Try CSV metadata scanning first
         content = self._get_metadata_csv_content()
         reader = csv.reader(io.StringIO(content))
         header = next(reader, None)
-        for row in reader:
-            if not row or len(row) < 2:
-                continue
-            imdb_id = row[0].strip()
-            title = row[1].strip()
-            if (
-                imdb_id.lower() == target 
-                or imdb_id.lower() == target_id 
-                or title.lower() == target 
-                or target in title.lower()
-            ):
-                genres = [g.strip() for g in row[22].split(',')] if len(row) > 22 and row[22] else []
-                directors = [d.strip() for d in row[14].split(',')] if len(row) > 14 and row[14] else []
-                writers = [w.strip() for w in row[13].split(',')] if len(row) > 13 and row[13] else []
-                cast = [c.strip() for c in row[16].split(',')] if len(row) > 16 and row[16] else []
-                plot = row[19].strip() if len(row) > 19 else ""
+        rows = [r for r in reader if r and len(r) >= 2]
 
-                return MovieMetadata(
-                    imdb_id=imdb_id,
-                    title=title,
-                    year=row[3].strip() if len(row) > 3 else None,
-                    genres=genres,
-                    directors=directors,
-                    writers=writers,
-                    cast=cast,
-                    plot=plot
-                )
+        matched_row = None
+        # Pass 1: Exact IMDB ID or Exact Title match
+        for row in rows:
+            imdb_id = row[0].strip().lower()
+            title = row[1].strip().lower()
+            clean_title_alnum = re.sub(r'[^a-zA-Z0-9]', '', title)
+            if imdb_id == target or imdb_id == target_id or title == target or title == clean_target or clean_title_alnum == clean_target_alnum:
+                matched_row = row
+                break
+
+        if matched_row:
+            genres = [g.strip() for g in matched_row[22].split(',')] if len(matched_row) > 22 and matched_row[22] else []
+            directors = [d.strip() for d in matched_row[14].split(',')] if len(matched_row) > 14 and matched_row[14] else []
+            writers = [w.strip() for w in matched_row[13].split(',')] if len(matched_row) > 13 and matched_row[13] else []
+            cast = [c.strip() for c in matched_row[16].split(',')] if len(matched_row) > 16 and matched_row[16] else []
+            plot = matched_row[19].strip() if len(matched_row) > 19 else ""
+
+            return MovieMetadata(
+                imdb_id=matched_row[0].strip(),
+                title=matched_row[1].strip(),
+                year=matched_row[3].strip() if len(matched_row) > 3 else None,
+                genres=genres,
+                directors=directors,
+                writers=writers,
+                cast=cast,
+                plot=plot
+            )
 
         # 2. Fallback to movies_index.json metadata
         available = self.get_available_movies()
         for m in available:
-            m_title = m.get("title", "")
-            m_id = str(m.get("imdb_id", ""))
+            m_title = m.get("title", "").strip()
+            m_id = str(m.get("imdb_id", "")).strip()
+            clean_m_title = re.sub(r'[^a-zA-Z0-9]', '', m_title.lower())
             if (
                 m_title.lower() == target 
+                or m_title.lower() == clean_target
+                or clean_m_title == clean_target_alnum
                 or m_id.lower() == target 
                 or m_id.lower() == target_id 
-                or target in m_title.lower()
             ):
                 genres_list = [g.strip() for g in m.get("genres", "").split(',') if g.strip()]
                 return MovieMetadata(
@@ -181,7 +188,6 @@ class DatasetLoader:
                     plot=f"Screenplay transcript analysis for {m_title}."
                 )
 
-        return None
         return None
 
     def _load_raw_screenplay_json(self, padded_id: str, raw_id: str, clean_target_title: str) -> Optional[List[Any]]:
@@ -197,7 +203,7 @@ class DatasetLoader:
             if not matched_file and clean_target_title:
                 for f in files:
                     clean_file_title = re.sub(r'[^a-zA-Z0-9]', '', f.rsplit('_', 1)[0]).lower()
-                    if clean_target_title in clean_file_title or clean_file_title in clean_target_title:
+                    if clean_file_title == clean_target_title:
                         matched_file = f
                         break
             if matched_file:
@@ -219,7 +225,7 @@ class DatasetLoader:
                     for f in annot_files:
                         basename = os.path.basename(f)
                         clean_file_title = re.sub(r'[^a-zA-Z0-9]', '', basename.rsplit('_', 1)[0]).lower()
-                        if clean_target_title in clean_file_title or clean_file_title in clean_target_title:
+                        if clean_file_title == clean_target_title:
                             matched_file = f
                             break
                 if matched_file:

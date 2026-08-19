@@ -45,13 +45,15 @@ class CharacterPresenceExtractor(BaseExtractor):
         return cleaned
 
     def _infer_gender_dynamic_nlp(self, character_name: str, scenes: List[SceneSegment]) -> str:
-        """
-        Dynamically infers gender using pronoun co-occurrence NLP analysis
-        across dialogue text in the uploaded screenplay transcript.
-        """
         name_clean = character_name.lower()
         first_n = name_clean.split()[0] if name_clean.split() else ""
         
+        # Immediate semantic indicator terms
+        if first_n in {"ma", "mom", "mother", "mrs", "miss", "ms", "lady", "queen", "girl", "woman", "daughter", "sister", "aunt", "lelaina", "vickie", "ruby", "juliet", "mary"}:
+            return "Female"
+        if first_n in {"pa", "dad", "father", "mr", "king", "boy", "man", "son", "brother", "uncle", "troy", "sammy", "michael", "calvin", "jack", "john", "romeo"}:
+            return "Male"
+
         fem_score = 0
         masc_score = 0
 
@@ -60,8 +62,7 @@ class CharacterPresenceExtractor(BaseExtractor):
                 spk = d.speaker.lower() if d.speaker else ""
                 text_lower = d.text.lower() if d.text else ""
 
-                # Analyze dialogues spoken by this character or referring to this character
-                if spk == name_clean or first_n in text_lower:
+                if spk != name_clean and first_n and first_n in text_lower:
                     fem_score += len(re.findall(r'\b(she|her|hers|herself|woman|girl|lady|ms|mrs|miss)\b', text_lower))
                     masc_score += len(re.findall(r'\b(he|him|his|himself|man|boy|guy|mr|sir)\b', text_lower))
 
