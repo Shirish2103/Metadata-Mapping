@@ -64,6 +64,7 @@ class DialogueEntry(BaseModel):
 
 class CharacterPresence(BaseModel):
     character_name: str
+    gender: Optional[str] = Field(default="Unspecified", description="Enriched gender: Male, Female, or Unspecified")
     first_scene_idx: int
     last_scene_idx: int
     first_timestamp: str = "00:00:00"
