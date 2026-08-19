@@ -38,6 +38,25 @@ class ProcessRequest(BaseModel):
     force_refresh: Optional[bool] = Field(False, description="Set True to bypass database cache and re-extract metadata")
 
 
+import threading
+
+
+def _background_cache_warmup():
+    try:
+        from scripts.preindex_dataset import preindex_all_dataset_movies
+        print("🚀 Starting background dataset metadata cache warmup...")
+        preindex_all_dataset_movies(limit=15)
+    except Exception as e:
+        print(f"Background warmup notice: {e}")
+
+
+@app.on_event("startup")
+def startup_event():
+    # Start non-blocking background worker thread to warm up SQLite cache
+    thread = threading.Thread(target=_background_cache_warmup, daemon=True)
+    thread.start()
+
+
 @app.get("/api/health")
 def health_check():
     return {
