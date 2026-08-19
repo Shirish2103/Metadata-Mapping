@@ -13,8 +13,12 @@ st.set_page_config(
 
 # Base URL for FastAPI backend
 BACKEND_URL = os.getenv("BACKEND_URL")
-if not BACKEND_URL and hasattr(st, "secrets") and "BACKEND_URL" in st.secrets:
-    BACKEND_URL = st.secrets["BACKEND_URL"]
+if not BACKEND_URL:
+    try:
+        if hasattr(st, "secrets") and "BACKEND_URL" in st.secrets:
+            BACKEND_URL = st.secrets["BACKEND_URL"]
+    except Exception:
+        pass
 if not BACKEND_URL:
     BACKEND_URL = "http://127.0.0.1:8000"
 
