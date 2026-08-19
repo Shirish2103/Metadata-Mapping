@@ -1,6 +1,38 @@
+import re
 from typing import List, Dict, Any, Optional
 from extractors.base_extractor import BaseExtractor
 from models.schema import MovieMetadata, SceneSegment, CharacterPresence, CharacterPresenceReport
+
+NOISE_SPEAKER_WORDS = {
+    "UNKNOWN", "NONE", "N/A", "CONTINUED", "TITLE", "SUPERIMPOSE", "MONTAGE",
+    "SCENE", "CUT TO", "FADE IN", "FADE OUT", "DISSOLVE", "TIME DISSOLVE",
+    "END MONTAGE", "END_MONTAGE", "MOMENTS LATER", "HALLWAY", "OFFSCREEN",
+    "VOICEOVER", "CAMERA", "ANGLE", "CLOSE UP", "FLASHBACK", "EXT", "INT",
+    "PROTAGONIST", "NARRATOR", "CHARACTER", "INTERVIEW", "AUDIENCE", "ACTOR",
+    "ACTRESS", "ASSOCIATE", "COMPUTER VOICE"
+}
+
+def clean_and_validate_speaker(raw_speaker: str) -> Optional[str]:
+    if not raw_speaker:
+        return None
+    
+    cleaned = re.sub(r'\(.*?\)', '', raw_speaker)
+    cleaned = re.sub(r"['’]s$", '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[^a-zA-Z\s]', ' ', cleaned).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned).title().strip()
+    
+    if not cleaned or len(cleaned) <= 1:
+        return None
+        
+    upper_c = cleaned.upper()
+    if upper_c in NOISE_SPEAKER_WORDS:
+        return None
+        
+    for w in ["MONTAGE", "DISSOLVE", "SUPERIMPOSE", "CONTINUED"]:
+        if w in upper_c:
+            return None
+            
+    return cleaned
 
 class CharacterPresenceExtractor(BaseExtractor):
     def extract(
@@ -12,9 +44,6 @@ class CharacterPresenceExtractor(BaseExtractor):
             return CharacterPresenceReport(total_movie_scenes=0, characters=[])
 
         total_scenes = len(scenes)
-        
-        # Track character metrics
-        # char_name -> dict of info
         char_data: Dict[str, Dict[str, Any]] = {}
 
         for scene in scenes:
@@ -23,12 +52,9 @@ class CharacterPresenceExtractor(BaseExtractor):
             end_ts = scene.time_range.end_time if scene.time_range else "00:00:00"
 
             for dialogue in scene.dialogues:
-                speaker = dialogue.speaker.strip() if dialogue.speaker else None
-                if not speaker or speaker.lower() in {"unknown", "none"}:
+                speaker_name = clean_and_validate_speaker(dialogue.speaker)
+                if not speaker_name:
                     continue
-                
-                # Normalize speaker name to Title Case
-                speaker_name = speaker.title()
 
                 if speaker_name not in char_data:
                     char_data[speaker_name] = {
