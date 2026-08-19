@@ -94,6 +94,22 @@ class DatasetLoader:
         return self._csv_content_cache
 
     def get_available_movies(self) -> List[Dict[str, str]]:
+        # 1. Try pre-indexed JSON file first
+        json_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "movies_index.json"),
+            os.path.join("data", "movies_index.json")
+        ]
+        for jp in json_paths:
+            if os.path.exists(jp):
+                try:
+                    with open(jp, 'r', encoding='utf-8', errors='ignore') as f:
+                        data = json.load(f)
+                        if data:
+                            return data
+                except Exception:
+                    pass
+
+        # 2. Fallback to CSV scanning
         movies = []
         content = self._get_metadata_csv_content()
         reader = csv.reader(io.StringIO(content))
@@ -116,6 +132,7 @@ class DatasetLoader:
         target = imdb_id_or_title.strip().lower()
         target_id = target.rsplit('_', 1)[-1] if '_' in target else target
 
+        # 1. Try CSV metadata first if available
         content = self._get_metadata_csv_content()
         reader = csv.reader(io.StringIO(content))
         header = next(reader, None)
@@ -146,6 +163,31 @@ class DatasetLoader:
                     cast=cast,
                     plot=plot
                 )
+
+        # 2. Fallback to movies_index.json metadata
+        available = self.get_available_movies()
+        for m in available:
+            m_title = m.get("title", "")
+            m_id = str(m.get("imdb_id", ""))
+            if (
+                m_title.lower() == target 
+                or m_id.lower() == target 
+                or m_id.lower() == target_id 
+                or target in m_title.lower()
+            ):
+                genres_list = [g.strip() for g in m.get("genres", "").split(',') if g.strip()]
+                return MovieMetadata(
+                    imdb_id=m_id,
+                    title=m_title,
+                    year=m.get("year", "2026"),
+                    genres=genres_list if genres_list else ["Drama"],
+                    directors=["Director"],
+                    writers=["Writer"],
+                    cast=["Cast"],
+                    plot=f"Screenplay transcript analysis for {m_title}."
+                )
+
+        return None
         return None
 
     def _load_raw_screenplay_json(self, padded_id: str, raw_id: str, clean_target_title: str) -> Optional[List[Any]]:

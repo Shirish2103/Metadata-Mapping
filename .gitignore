@@ -42,6 +42,7 @@ venv.bak/
 *.sqlite3
 *.db-journal
 *.db-wal
+!data/transcript_metadata.db
 
 # Testing, Coverage & Cache
 .pytest_cache/
