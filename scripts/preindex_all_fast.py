@@ -17,25 +17,18 @@ def preindex_full_database():
     db_path = "data/transcript_metadata.db"
     
     print("=" * 70)
-    print("🗑️ STEP 1: CLEARING OLD DATABASE & INITIALIZING FRESH DB")
-    print("=" * 70)
-    
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print("✅ Old SQLite database deleted.")
-
     db = DatabaseManager(db_path)
-    print("✅ Fresh SQLite database initialized.")
+    existing_records = db.get_all_metadata()
+    existing_ids = {r.get("imdb_id", "").lower() for r in existing_records if r.get("imdb_id")}
+    existing_titles = {r.get("title", "").lower() for r in existing_records if r.get("title")}
+    print(f"✅ Found {len(existing_records)} existing valid records in database. Resuming...")
 
     loader = DatasetLoader()
     processor = MetadataProcessor()
 
-    movies = loader.get_available_movies()
-    print(f"📦 Found {len(movies)} total movies in dataset.")
-
-    print("\n=" * 70)
-    print("🚀 STEP 2: PARALLEL PRE-INDEXING ALL MOVIES INTO SQLITE DB")
-    print("=" * 70)
+    all_movies = loader.get_available_movies()
+    movies = [m for m in all_movies if m.get("imdb_id", "").lower() not in existing_ids and m.get("title", "").lower() not in existing_titles]
+    print(f"📦 Found {len(movies)} remaining movies to index out of {len(all_movies)} total.")
 
     start_time = time.time()
     success_count = 0
@@ -46,7 +39,7 @@ def preindex_full_database():
         title = movie_data.get("title")
         try:
             res = processor.process_transcript(imdb_id)
-            if res.character_presence and len(res.character_presence.characters) > 0:
+            if res.character_presence and len(res.character_presence.characters) > 0 and res.scene_breakdown_count > 4:
                 db.save_extracted_metadata(res)
                 return True, title, imdb_id, len(res.character_presence.characters), res.character_presence.total_movie_scenes
         except Exception:
@@ -56,7 +49,7 @@ def preindex_full_database():
     total = len(movies)
     completed = 0
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
         futures = {executor.submit(process_single_movie, m): m for m in movies}
         for future in concurrent.futures.as_completed(futures):
             completed += 1

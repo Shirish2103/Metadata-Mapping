@@ -3,15 +3,12 @@ from typing import List, Dict, Any, Optional
 from extractors.base_extractor import BaseExtractor
 from models.schema import MovieMetadata, SceneSegment, CharacterPresence, CharacterPresenceReport
 
+from extractors.entity_extractor import get_shared_nlp
+
 class CharacterPresenceExtractor(BaseExtractor):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.nlp = None
-        try:
-            import spacy
-            self.nlp = spacy.load("en_core_web_sm", disable=["parser"])
-        except Exception:
-            self.nlp = None
+        self.nlp = get_shared_nlp()
 
     def _is_valid_character_name_nlp(self, raw_speaker: str) -> Optional[str]:
         if not raw_speaker:

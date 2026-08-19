@@ -10,16 +10,23 @@ try:
 except ImportError:
     pass
 
+_SHARED_NLP = None
+
+def get_shared_nlp():
+    global _SHARED_NLP
+    if _SHARED_NLP is None:
+        try:
+            import spacy
+            _SHARED_NLP = spacy.load("en_core_web_sm", disable=["parser"])
+        except Exception:
+            _SHARED_NLP = False
+    return _SHARED_NLP if _SHARED_NLP is not False else None
+
 class EntityExtractor(BaseExtractor):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.nlp = None
+        self.nlp = get_shared_nlp()
         self._entity_cache: Dict[str, bool] = {}
-        try:
-            import spacy
-            self.nlp = spacy.load("en_core_web_sm", disable=["parser"])
-        except Exception:
-            self.nlp = None
 
     def _is_valid_entity_nlp(self, entity_str: str) -> bool:
         if not entity_str or len(entity_str) <= 2:
