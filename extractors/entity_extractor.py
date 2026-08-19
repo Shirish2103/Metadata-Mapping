@@ -17,7 +17,7 @@ class EntityExtractor(BaseExtractor):
         self._entity_cache: Dict[str, bool] = {}
         try:
             import spacy
-            self.nlp = spacy.load("en_core_web_sm")
+            self.nlp = spacy.load("en_core_web_sm", disable=["parser"])
         except Exception:
             self.nlp = None
 

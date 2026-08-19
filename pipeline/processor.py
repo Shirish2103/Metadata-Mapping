@@ -114,7 +114,7 @@ class MetadataProcessor:
             scenes = TimestampParser.filter_scenes_by_timerange(scenes, s_ts, e_ts)
             is_windowed = True
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             f_topics = executor.submit(self.topic_extractor.extract, movie_info, scenes)
             f_entities = executor.submit(self.entity_extractor.extract, movie_info, scenes)
             f_sentiment = executor.submit(self.sentiment_extractor.extract, movie_info, scenes)
@@ -277,7 +277,7 @@ class MetadataProcessor:
             plot=plot_summary
         )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             f_topics = executor.submit(self.topic_extractor.extract, movie_info, scenes)
             f_entities = executor.submit(self.entity_extractor.extract, movie_info, scenes)
             f_sentiment = executor.submit(self.sentiment_extractor.extract, movie_info, scenes)

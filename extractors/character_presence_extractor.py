@@ -35,42 +35,24 @@ def clean_and_validate_speaker(raw_speaker: str) -> Optional[str]:
     return cleaned
 
 import os
-import pickle
 
-GENDER_MAP = {}
-try:
-    g_path = os.path.join(os.path.dirname(__file__), "..", "data", "dataset", "character_genders.pickle")
-    if os.path.exists(g_path):
-        with open(g_path, 'rb') as f:
-            raw_genders = pickle.load(f)
-            for imdb_id, char_list in raw_genders.items():
-                clean_id = str(imdb_id).lstrip('0')
-                for item in char_list:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2:
-                        name_str = str(item[0])
-                        gender_type = str(item[1]).lower()
-                        g_label = "Female" if ("actress" in gender_type or "female" in gender_type) else ("Male" if ("actor" in gender_type or "male" in gender_type) else "Unspecified")
-                        GENDER_MAP[(clean_id, name_str.lower())] = g_label
-                        first_n = name_str.split()[0].lower() if name_str.split() else ""
-                        if first_n:
-                            GENDER_MAP[(clean_id, first_n)] = g_label
-except Exception:
-    pass
-
-FEMALE_FIRST_NAMES = {"winona", "vickie", "cynthia", "patty", "janeane", "louise", "jennifer", "carol", "libby", "sarah", "mary", "elizabeth", "kate", "rachel", "emma", "anne", "claire", "julia", "laura"}
-MALE_FIRST_NAMES = {"ethan", "steve", "ben", "grant", "pat", "dale", "phineas", "john", "dave", "lucien", "troy", "sammy", "michael", "luke", "roger", "david", "james", "robert", "michael", "william", "richard", "thomas", "charles", "christopher", "daniel", "matthew"}
+FEMALE_FIRST_NAMES = {
+    "winona", "vickie", "cynthia", "patty", "janeane", "louise", "jennifer", "carol", "libby", 
+    "sarah", "mary", "elizabeth", "kate", "rachel", "emma", "anne", "claire", "julia", "laura", 
+    "rose", "jackie", "diana", "helen", "nancy", "lisa", "amy", "sandra", "nicole", "emily", 
+    "jessica", "amanda", "ashley", "stephanie", "melissa", "megan", "hannah", "michelle"
+}
+MALE_FIRST_NAMES = {
+    "ethan", "steve", "ben", "grant", "pat", "dale", "phineas", "john", "dave", "lucien", "troy", 
+    "sammy", "michael", "luke", "roger", "david", "james", "robert", "william", "richard", 
+    "thomas", "charles", "christopher", "daniel", "matthew", "anthony", "mark", "donald", 
+    "steven", "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "edward"
+}
 
 def infer_character_gender(movie_imdb_id: Optional[str], character_name: str) -> str:
     clean_name = character_name.strip().lower()
-    clean_id = str(movie_imdb_id).lstrip('0') if movie_imdb_id else ""
-    
-    if (clean_id, clean_name) in GENDER_MAP:
-        return GENDER_MAP[(clean_id, clean_name)]
-        
     first_n = clean_name.split()[0] if clean_name.split() else ""
-    if (clean_id, first_n) in GENDER_MAP:
-        return GENDER_MAP[(clean_id, first_n)]
-        
+    
     if first_n in FEMALE_FIRST_NAMES:
         return "Female"
     if first_n in MALE_FIRST_NAMES:
