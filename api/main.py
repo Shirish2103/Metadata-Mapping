@@ -41,23 +41,18 @@ class ProcessRequest(BaseModel):
 import threading
 
 
-def _background_cache_warmup():
-    try:
-        from scripts.preindex_dataset import preindex_all_dataset_movies
-        print("🚀 Starting background dataset metadata cache warmup...")
-        preindex_all_dataset_movies(limit=15)
-    except Exception as e:
-        print(f"Background warmup notice: {e}")
-
-
-@app.on_event("startup")
-def startup_event():
-    # Start non-blocking background worker thread to warm up SQLite cache
-    thread = threading.Thread(target=_background_cache_warmup, daemon=True)
-    thread.start()
+@app.get("/")
+@app.head("/")
+def root_check():
+    return {
+        "status": "ok",
+        "service": "AI Movie Metadata Extraction Backend API",
+        "version": "1.0.0"
+    }
 
 
 @app.get("/api/health")
+@app.head("/api/health")
 def health_check():
     return {
         "status": "ok",
