@@ -1,8 +1,6 @@
 import re
 import os
 from typing import List, Dict, Any, Optional, Set
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from models.schema import MovieMetadata, SceneSegment, ExtractedSentiment
 from extractors.base_extractor import BaseExtractor
 
@@ -12,9 +10,11 @@ class SentimentExtractor(BaseExtractor):
         super().__init__(config)
         self.vader = None
         try:
+            import nltk
             nltk.download('vader_lexicon', quiet=True)
+            from nltk.sentiment.vader import SentimentIntensityAnalyzer
             self.vader = SentimentIntensityAnalyzer()
-        except Exception:
+        except Exception as e:
             self.vader = None
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedSentiment:
