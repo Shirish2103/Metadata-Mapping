@@ -26,14 +26,17 @@ class EntityExtractor(BaseExtractor):
             return False
         if entity_str in self._entity_cache:
             return self._entity_cache[entity_str]
+
         cand = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', entity_str).strip()
-        if not cand or len(cand) <= 2:
+        if not cand or len(cand) <= 2 or len(cand.split()) > 4:
             self._entity_cache[entity_str] = False
             return False
+
         if self.nlp:
             doc = self.nlp(cand)
+            # Pure POS & Entity Validation
             for t in doc:
-                if t.pos_ in {"NUM", "VERB", "PUNCT", "AUX", "DET", "ADP", "SCONJ", "CCONJ", "SYM"} or t.like_num or t.is_punct:
+                if t.pos_ in {"VERB", "AUX", "NUM", "PUNCT", "ADP", "SCONJ", "CCONJ", "SYM"} or t.like_num or t.is_punct:
                     self._entity_cache[entity_str] = False
                     return False
             for ent in doc.ents:
@@ -44,6 +47,7 @@ class EntityExtractor(BaseExtractor):
             if re.search(r'\d+', cand) or any(c in cand for c in ['"', '...', '!', '?', ';']):
                 self._entity_cache[entity_str] = False
                 return False
+
         self._entity_cache[entity_str] = True
         return True
 
@@ -54,62 +58,50 @@ class EntityExtractor(BaseExtractor):
         products: Set[str] = set()
         other_entities: Set[str] = set()
 
-        active_text_sample = []
+        full_text_list = []
         for sc in scenes:
-            if sc.location:
-                loc_clean = re.sub(r'^(INT\.|EXT\.|INT/EXT\.|EXT/INT\.)\s*', '', sc.location, flags=re.IGNORECASE).strip()
-                loc_clean = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', loc_clean).strip()
-                if self._is_valid_entity_nlp(loc_clean):
-                    locations.add(loc_clean.title())
-
             if sc.action_text:
-                active_text_sample.append(sc.action_text)
-
+                full_text_list.append(sc.action_text)
             for d in sc.dialogues:
                 if d.text:
-                    active_text_sample.append(d.text)
-                if d.speaker and d.speaker.upper() != "UNKNOWN":
-                    if self._is_valid_entity_nlp(d.speaker):
-                        people.add(d.speaker.title())
+                    full_text_list.append(d.text)
 
-        combined_sample = " ".join(active_text_sample[:10000])
+        full_text = " ".join(full_text_list).strip()
 
-        if movie_info and combined_sample:
-            combined_sample_lower = combined_sample.lower()
-            for person in (movie_info.cast + movie_info.directors + movie_info.writers):
-                clean_p = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', person).strip()
-                if clean_p and len(clean_p) > 1 and self._is_valid_entity_nlp(clean_p):
-                    first_name = clean_p.split()[0].lower()
-                    last_name = clean_p.split()[-1].lower() if len(clean_p.split()) > 1 else ""
-                    if len(first_name) > 2 and (first_name in combined_sample_lower or (last_name and len(last_name) > 2 and last_name in combined_sample_lower)):
-                        people.add(clean_p.title())
-
-        if self.nlp and combined_sample:
-            doc = self.nlp(combined_sample[:5000])
+        # Dynamic spaCy NER Extraction
+        if full_text and self.nlp:
+            text_sample = full_text[:5000]
+            doc = self.nlp(text_sample)
             for ent in doc.ents:
-                clean_ent = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', ent.text).strip().title()
-                if not self._is_valid_entity_nlp(clean_ent):
+                cleaned = ent.text.strip().title()
+                if not self._is_valid_entity_nlp(cleaned):
                     continue
 
-                label = ent.label_
-                if label == "PERSON":
-                    if len(clean_ent.split()) <= 3:
-                        people.add(clean_ent)
-                elif label in {"GPE", "LOC", "FAC"}:
-                    locations.add(clean_ent)
-                elif label in {"ORG"}:
-                    organizations.add(clean_ent)
-                elif label in {"PRODUCT"}:
-                    products.add(clean_ent)
-                elif label in {"EVENT", "WORK_OF_ART", "LAW", "NORP"}:
-                    other_entities.add(clean_ent)
+                if ent.label_ in {"PERSON"}:
+                    people.add(cleaned)
+                elif ent.label_ in {"GPE", "LOC", "FAC"}:
+                    locations.add(cleaned)
+                elif ent.label_ in {"ORG"}:
+                    organizations.add(cleaned)
+                elif ent.label_ in {"PRODUCT"}:
+                    products.add(cleaned)
+                elif ent.label_ in {"EVENT", "WORK_OF_ART", "NORP"}:
+                    other_entities.add(cleaned)
 
+        # Fallback dynamic regex NER when spaCy disabled
+        if not people and not locations and full_text:
+            capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b', full_text[:3000])
+            for w in capitalized_words:
+                if self._is_valid_entity_nlp(w) and len(w) > 3:
+                    people.add(w.title())
+
+        # LLM zero-shot entity enrichment when API available
         prompt = (
-            f"Perform Named Entity Recognition (NER) on this transcript sample.\n"
+            f"Extract Named Entities from this transcript text.\n"
             f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-            f"Sample Text: {combined_sample[:1500]}\n"
-            f"Identify real world entities and return JSON format:\n"
-            f"{{\"people\": [...], \"organizations\": [...], \"locations\": [...], \"products\": [...], \"other_entities\": [...]}}"
+            f"Text Sample: {full_text[:1200]}\n"
+            f"Return JSON format:\n"
+            f"{{\"people\": [...], \"locations\": [...], \"organizations\": [...], \"products\": [...]}}"
         )
         llm_response = self.call_llm_with_timeout(prompt, timeout=5.0)
         if llm_response:
@@ -118,27 +110,24 @@ class EntityExtractor(BaseExtractor):
                 json_str = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
                 parsed = json.loads(json_str)
                 if "people" in parsed and isinstance(parsed["people"], list):
-                    people.update([re.sub(r'^[-*\s()]+|[-*\s()]+$', '', str(x)).strip().title() for x in parsed["people"] if self._is_valid_entity_nlp(str(x))])
-                if "organizations" in parsed and isinstance(parsed["organizations"], list):
-                    organizations.update([str(x).strip().title() for x in parsed["organizations"] if self._is_valid_entity_nlp(str(x))])
+                    for p in parsed["people"]:
+                        if self._is_valid_entity_nlp(str(p)): people.add(str(p).title())
                 if "locations" in parsed and isinstance(parsed["locations"], list):
-                    locations.update([str(x).strip().title() for x in parsed["locations"] if self._is_valid_entity_nlp(str(x))])
+                    for l in parsed["locations"]:
+                        if self._is_valid_entity_nlp(str(l)): locations.add(str(l).title())
+                if "organizations" in parsed and isinstance(parsed["organizations"], list):
+                    for o in parsed["organizations"]:
+                        if self._is_valid_entity_nlp(str(o)): organizations.add(str(o).title())
                 if "products" in parsed and isinstance(parsed["products"], list):
-                    products.update([str(x).strip().title() for x in parsed["products"] if self._is_valid_entity_nlp(str(x))])
-                if "other_entities" in parsed and isinstance(parsed["other_entities"], list):
-                    other_entities.update([str(x).strip().title() for x in parsed["other_entities"] if self._is_valid_entity_nlp(str(x))])
+                    for pr in parsed["products"]:
+                        if self._is_valid_entity_nlp(str(pr)): products.add(str(pr).title())
             except Exception:
                 pass
 
-        people_upper = {p.upper() for p in people}
-        clean_locs = {loc for loc in locations if loc.upper() not in people_upper and len(loc) > 2}
-        clean_orgs = {org for org in organizations if org.upper() not in people_upper and len(org) > 2}
-        clean_others = {oth for oth in other_entities if oth.upper() not in people_upper and len(oth) > 2}
-
         return ExtractedEntities(
-            people=sorted([p for p in people if self._is_valid_entity_nlp(p)])[:15],
-            organizations=sorted([o for o in clean_orgs if self._is_valid_entity_nlp(o)])[:10],
-            locations=sorted([l for l in clean_locs if self._is_valid_entity_nlp(l)])[:15],
-            products=sorted([pr for pr in products if self._is_valid_entity_nlp(pr)])[:10],
-            other_entities=sorted([ot for ot in clean_others if self._is_valid_entity_nlp(ot)])[:10]
+            people=sorted(list(people))[:15],
+            locations=sorted(list(locations))[:15],
+            organizations=sorted(list(organizations))[:15],
+            products=sorted(list(products))[:10],
+            other_entities=sorted(list(other_entities))[:10]
         )
