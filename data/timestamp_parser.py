@@ -109,48 +109,98 @@ class TimestampParser:
 
     @staticmethod
     def parse_srt(srt_content: str) -> List[Dict[str, Any]]:
+        if not srt_content or not srt_content.strip():
+            return []
+
+        # 1. Normalize line endings
+        srt_content = srt_content.replace('\r\n', '\n').replace('\r', '\n')
         blocks = re.split(r'\n\s*\n', srt_content.strip())
         results = []
 
         for block in blocks:
-            lines = [line.strip() for line in block.splitlines() if line.strip()]
-            if len(lines) >= 3 and '-->' in lines[1]:
-                time_line = lines[1]
+            lines = [l.strip() for l in block.splitlines() if l.strip()]
+            if not lines:
+                continue
+
+            # Find timestamp line containing '-->'
+            time_line_idx = -1
+            for idx, l in enumerate(lines):
+                if '-->' in l:
+                    time_line_idx = idx
+                    break
+
+            if time_line_idx != -1:
+                time_line = lines[time_line_idx]
                 times = time_line.split('-->')
-                start_ts = times[0].strip()
-                end_ts = times[1].strip()
-                text_lines = lines[2:]
-                
-                full_text = " ".join(text_lines)
-                full_text = re.sub(r'<[^>]+>', '', full_text).strip()
-                
-                speaker = "Unknown"
-                if ':' in full_text and not full_text.startswith('http'):
-                    spk, txt = full_text.split(':', 1)
-                    spk_clean = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', spk).strip()
-                    spk_clean_no_paren = re.sub(r'\([^\)]*\)', '', spk_clean).strip()
-                    if spk_clean_no_paren and len(spk_clean_no_paren.split()) <= 3:
-                        speaker = spk_clean_no_paren
-                        full_text = txt.strip()
-
-                full_text = re.sub(r'\([^\)]*\)', '', full_text)
-                full_text = re.sub(r'\[[^\]]*\]', '', full_text)
-                full_text = re.sub(r'^[-*\s]+', '', full_text).strip()
-
-                speaker = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', speaker).strip()
-                if not speaker or len(speaker) <= 1 or (speaker.isupper() and len(speaker.split()) > 3):
+                if len(times) >= 2:
+                    start_ts = times[0].strip()
+                    end_ts = times[1].strip()
+                    text_lines = lines[time_line_idx + 1:]
+                    if not text_lines:
+                        continue
+                    
+                    full_text = " ".join(text_lines)
+                    full_text = re.sub(r'<[^>]+>', '', full_text).strip()
+                    
                     speaker = "Unknown"
+                    if ':' in full_text and not full_text.startswith('http'):
+                        spk, txt = full_text.split(':', 1)
+                        spk_clean = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', spk).strip()
+                        spk_clean_no_paren = re.sub(r'\([^\)]*\)', '', spk_clean).strip()
+                        if spk_clean_no_paren and len(spk_clean_no_paren.split()) <= 3:
+                            speaker = spk_clean_no_paren
+                            full_text = txt.strip()
+
+                    full_text = re.sub(r'\([^\)]*\)', '', full_text)
+                    full_text = re.sub(r'\[[^\]]*\]', '', full_text)
+                    full_text = re.sub(r'^[-*\s]+', '', full_text).strip()
+
+                    speaker = re.sub(r'^[-*\s()]+|[-*\s()]+$', '', speaker).strip()
+                    if not speaker or len(speaker) <= 1 or (speaker.isupper() and len(speaker.split()) > 3):
+                        speaker = "Unknown"
+                    else:
+                        speaker = speaker.title()
+
+                    if not full_text:
+                        continue
+
+                    results.append({
+                        "start_time": format_seconds_to_timestamp(parse_srt_timestamp(start_ts)),
+                        "end_time": format_seconds_to_timestamp(parse_srt_timestamp(end_ts)),
+                        "speaker": speaker,
+                        "text": full_text,
+                        "is_estimated": False
+                    })
+
+        # 2. Fallback line-by-line scanner if block splitting produced no results
+        if not results:
+            lines = [l.strip() for l in srt_content.splitlines() if l.strip()]
+            i = 0
+            while i < len(lines):
+                if '-->' in lines[i]:
+                    times = lines[i].split('-->')
+                    start_ts = times[0].strip()
+                    end_ts = times[1].strip()
+                    txt_parts = []
+                    i += 1
+                    while i < len(lines) and '-->' not in lines[i] and not (lines[i].isdigit() and len(lines[i]) < 5):
+                        txt_parts.append(lines[i])
+                        i += 1
+                    
+                    full_text = " ".join(txt_parts)
+                    full_text = re.sub(r'<[^>]+>', '', full_text).strip()
+                    full_text = re.sub(r'\([^\)]*\)', '', full_text)
+                    full_text = re.sub(r'\[[^\]]*\]', '', full_text).strip()
+                    
+                    if full_text:
+                        results.append({
+                            "start_time": format_seconds_to_timestamp(parse_srt_timestamp(start_ts)),
+                            "end_time": format_seconds_to_timestamp(parse_srt_timestamp(end_ts)),
+                            "speaker": "Unknown",
+                            "text": full_text,
+                            "is_estimated": False
+                        })
                 else:
-                    speaker = speaker.title()
+                    i += 1
 
-                if not full_text:
-                    continue
-
-                results.append({
-                    "start_time": format_seconds_to_timestamp(parse_srt_timestamp(start_ts)),
-                    "end_time": format_seconds_to_timestamp(parse_srt_timestamp(end_ts)),
-                    "speaker": speaker,
-                    "text": full_text,
-                    "is_estimated": False
-                })
         return results
