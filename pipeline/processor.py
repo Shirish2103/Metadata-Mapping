@@ -1,5 +1,6 @@
 import os
 import yaml
+import concurrent.futures
 from typing import List, Dict, Any, Optional
 from models.schema import (
     MovieMetadata, SceneSegment, Dialogue, ScriptMetadataResult, TimeRange,
@@ -67,11 +68,18 @@ class MetadataProcessor:
             scenes = TimestampParser.filter_scenes_by_timerange(scenes, s_ts, e_ts)
             is_windowed = True
 
-        topics: ExtractedTopics = self.topic_extractor.extract(movie_info, scenes)
-        entities: ExtractedEntities = self.entity_extractor.extract(movie_info, scenes)
-        sentiment: ExtractedSentiment = self.sentiment_extractor.extract(movie_info, scenes)
-        category: ExtractedCategory = self.category_extractor.extract(movie_info, scenes)
-        character_presence: CharacterPresenceReport = self.character_presence_extractor.extract(movie_info, scenes)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            f_topics = executor.submit(self.topic_extractor.extract, movie_info, scenes)
+            f_entities = executor.submit(self.entity_extractor.extract, movie_info, scenes)
+            f_sentiment = executor.submit(self.sentiment_extractor.extract, movie_info, scenes)
+            f_category = executor.submit(self.category_extractor.extract, movie_info, scenes)
+            f_char = executor.submit(self.character_presence_extractor.extract, movie_info, scenes)
+
+            topics: ExtractedTopics = f_topics.result()
+            entities: ExtractedEntities = f_entities.result()
+            sentiment: ExtractedSentiment = f_sentiment.result()
+            category: ExtractedCategory = f_category.result()
+            character_presence: CharacterPresenceReport = f_char.result()
 
 
         if scenes and scenes[0].time_range and scenes[-1].time_range:
@@ -223,11 +231,18 @@ class MetadataProcessor:
             plot=plot_summary
         )
 
-        topics = self.topic_extractor.extract(movie_info, scenes)
-        entities = self.entity_extractor.extract(movie_info, scenes)
-        sentiment = self.sentiment_extractor.extract(movie_info, scenes)
-        category = self.category_extractor.extract(movie_info, scenes)
-        character_presence = self.character_presence_extractor.extract(movie_info, scenes)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            f_topics = executor.submit(self.topic_extractor.extract, movie_info, scenes)
+            f_entities = executor.submit(self.entity_extractor.extract, movie_info, scenes)
+            f_sentiment = executor.submit(self.sentiment_extractor.extract, movie_info, scenes)
+            f_category = executor.submit(self.category_extractor.extract, movie_info, scenes)
+            f_char = executor.submit(self.character_presence_extractor.extract, movie_info, scenes)
+
+            topics = f_topics.result()
+            entities = f_entities.result()
+            sentiment = f_sentiment.result()
+            category = f_category.result()
+            character_presence = f_char.result()
 
 
         dialogues_in_window = []

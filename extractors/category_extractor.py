@@ -54,33 +54,26 @@ class CategoryExtractor(BaseExtractor):
 
         reasoning = f"Categorized using dynamic TF-IDF semantic vector similarity ({primary})."
 
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
+        prompt = (
+            f"Classify this transcript into one primary category and 1-2 secondary categories.\n"
+            f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
+            f"Text Sample: {full_text[:1500]}\n"
+            f"Allowed Categories: {', '.join(allowed_categories)}\n"
+            f"Return JSON format:\n"
+            f"{{\"primary_category\": \"...\", \"secondary_categories\": [...], \"reasoning\": \"...\"}}"
+        )
+        llm_response = self.call_llm_with_timeout(prompt, timeout=5.0)
+        if llm_response:
             try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                prompt = (
-                    f"Classify this transcript into one primary category and 1-2 secondary categories.\n"
-                    f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-                    f"Text Sample: {full_text[:1500]}\n"
-                    f"Allowed Categories: {', '.join(allowed_categories)}\n"
-                    f"Return JSON format:\n"
-                    f"{{\"primary_category\": \"...\", \"secondary_categories\": [...], \"reasoning\": \"...\"}}"
-                )
-                response = client.models.generate_content(
-                    model=self.config.get("llm", {}).get("model_name", "gemini-3.6-flash"),
-                    contents=prompt
-                )
-                if response and response.text:
-                    import json
-                    json_str = re.sub(r'```json\s*|\s*```', '', response.text).strip()
-                    parsed = json.loads(json_str)
-                    if "primary_category" in parsed and parsed["primary_category"] in allowed_categories:
-                        primary = parsed["primary_category"]
-                    if "secondary_categories" in parsed and isinstance(parsed["secondary_categories"], list):
-                        secondary = [c for c in parsed["secondary_categories"] if c in allowed_categories]
-                    if "reasoning" in parsed:
-                        reasoning = parsed["reasoning"]
+                import json
+                json_str = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
+                parsed = json.loads(json_str)
+                if "primary_category" in parsed and parsed["primary_category"] in allowed_categories:
+                    primary = parsed["primary_category"]
+                if "secondary_categories" in parsed and isinstance(parsed["secondary_categories"], list):
+                    secondary = [c for c in parsed["secondary_categories"] if c in allowed_categories]
+                if "reasoning" in parsed:
+                    reasoning = parsed["reasoning"]
             except Exception:
                 pass
 

@@ -91,36 +91,26 @@ class TopicExtractor(BaseExtractor):
 
         subjects = [kw.title() for kw in keywords[2:8]] if len(keywords) >= 8 else [kw.title() for kw in keywords[:5]]
 
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
+        prompt = (
+            f"Perform high-level thematic topic extraction on this movie transcript.\n"
+            f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
+            f"Plot/Sample Text: {combined_text[:2000]}\n"
+            f"Top NLP Keywords: {', '.join(keywords[:10])}\n\n"
+            f"Return ONLY valid JSON with abstract thematic topics and subjects (exclude character names, numbers, script directions):\n"
+            f"{{\"main_topics\": [3-5 abstract themes/genres], \"subjects\": [4-6 specific sub-topics], \"keywords\": [8-12 thematic keywords]}}"
+        )
+        llm_response = self.call_llm_with_timeout(prompt, timeout=5.0)
+        if llm_response:
             try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                prompt = (
-                    f"Perform high-level thematic topic extraction on this movie transcript.\n"
-                    f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-                    f"Plot/Sample Text: {combined_text[:2000]}\n"
-                    f"Top NLP Keywords: {', '.join(keywords[:10])}\n\n"
-                    f"Return ONLY valid JSON with abstract thematic topics and subjects (exclude character names, numbers, script directions):\n"
-                    f"{{\"main_topics\": [3-5 abstract themes/genres], \"subjects\": [4-6 specific sub-topics], \"keywords\": [8-12 thematic keywords]}}"
-                )
-                response = client.models.generate_content(
-                    model=self.config.get("llm", {}).get("model_name", "gemini-3.6-flash"),
-                    contents=prompt
-                )
-                if response and response.text:
-                    import json
-                    json_str = re.sub(r'```json\s*|\s*```', '', response.text).strip()
-                    parsed = json.loads(json_str)
-                    if "main_topics" in parsed and isinstance(parsed["main_topics"], list):
-                        if parsed["main_topics"]:
-                            main_topics = [t.title() for t in parsed["main_topics"] if isinstance(t, str)]
-                    if "subjects" in parsed and isinstance(parsed["subjects"], list):
-                        if parsed["subjects"]:
-                            subjects = [s.title() for s in parsed["subjects"] if isinstance(s, str)]
-                    if "keywords" in parsed and isinstance(parsed["keywords"], list):
-                        if parsed["keywords"]:
-                            keywords = [k.lower() for k in parsed["keywords"] if isinstance(k, str)]
+                import json
+                json_str = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
+                parsed = json.loads(json_str)
+                if "main_topics" in parsed and isinstance(parsed["main_topics"], list) and parsed["main_topics"]:
+                    main_topics = [t.title() for t in parsed["main_topics"] if isinstance(t, str)]
+                if "subjects" in parsed and isinstance(parsed["subjects"], list) and parsed["subjects"]:
+                    subjects = [s.title() for s in parsed["subjects"] if isinstance(s, str)]
+                if "keywords" in parsed and isinstance(parsed["keywords"], list) and parsed["keywords"]:
+                    keywords = [k.lower() for k in parsed["keywords"] if isinstance(k, str)]
             except Exception:
                 pass
 

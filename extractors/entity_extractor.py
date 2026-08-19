@@ -14,6 +14,7 @@ class EntityExtractor(BaseExtractor):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.nlp = None
+        self._entity_cache: Dict[str, bool] = {}
         try:
             import spacy
             self.nlp = spacy.load("en_core_web_sm")
@@ -23,20 +24,27 @@ class EntityExtractor(BaseExtractor):
     def _is_valid_entity_nlp(self, entity_str: str) -> bool:
         if not entity_str or len(entity_str) <= 2:
             return False
+        if entity_str in self._entity_cache:
+            return self._entity_cache[entity_str]
         cand = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', entity_str).strip()
         if not cand or len(cand) <= 2:
+            self._entity_cache[entity_str] = False
             return False
         if self.nlp:
             doc = self.nlp(cand)
             for t in doc:
                 if t.pos_ in {"NUM", "VERB", "PUNCT", "AUX", "DET", "ADP", "SCONJ", "CCONJ", "SYM"} or t.like_num or t.is_punct:
+                    self._entity_cache[entity_str] = False
                     return False
             for ent in doc.ents:
                 if ent.label_ in {"DATE", "TIME", "CARDINAL", "QUANTITY", "PERCENT"}:
+                    self._entity_cache[entity_str] = False
                     return False
         else:
             if re.search(r'\d+', cand) or any(c in cand for c in ['"', '...', '!', '?', ';']):
+                self._entity_cache[entity_str] = False
                 return False
+        self._entity_cache[entity_str] = True
         return True
 
     def extract(self, movie_info: Optional[MovieMetadata], scenes: List[SceneSegment]) -> ExtractedEntities:
@@ -96,36 +104,29 @@ class EntityExtractor(BaseExtractor):
                 elif label in {"EVENT", "WORK_OF_ART", "LAW", "NORP"}:
                     other_entities.add(clean_ent)
 
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
+        prompt = (
+            f"Perform Named Entity Recognition (NER) on this transcript sample.\n"
+            f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
+            f"Sample Text: {combined_sample[:1500]}\n"
+            f"Identify real world entities and return JSON format:\n"
+            f"{{\"people\": [...], \"organizations\": [...], \"locations\": [...], \"products\": [...], \"other_entities\": [...]}}"
+        )
+        llm_response = self.call_llm_with_timeout(prompt, timeout=5.0)
+        if llm_response:
             try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                prompt = (
-                    f"Perform Named Entity Recognition (NER) on this transcript sample.\n"
-                    f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-                    f"Sample Text: {combined_sample[:1500]}\n"
-                    f"Identify real world entities and return JSON format:\n"
-                    f"{{\"people\": [...], \"organizations\": [...], \"locations\": [...], \"products\": [...], \"other_entities\": [...]}}"
-                )
-                response = client.models.generate_content(
-                    model=self.config.get("llm", {}).get("model_name", "gemini-3.6-flash"),
-                    contents=prompt
-                )
-                if response and response.text:
-                    import json
-                    json_str = re.sub(r'```json\s*|\s*```', '', response.text).strip()
-                    parsed = json.loads(json_str)
-                    if "people" in parsed and isinstance(parsed["people"], list):
-                        people.update([re.sub(r'^[-*\s()]+|[-*\s()]+$', '', str(x)).strip().title() for x in parsed["people"] if self._is_valid_entity_nlp(str(x))])
-                    if "organizations" in parsed and isinstance(parsed["organizations"], list):
-                        organizations.update([str(x).strip().title() for x in parsed["organizations"] if self._is_valid_entity_nlp(str(x))])
-                    if "locations" in parsed and isinstance(parsed["locations"], list):
-                        locations.update([str(x).strip().title() for x in parsed["locations"] if self._is_valid_entity_nlp(str(x))])
-                    if "products" in parsed and isinstance(parsed["products"], list):
-                        products.update([str(x).strip().title() for x in parsed["products"] if self._is_valid_entity_nlp(str(x))])
-                    if "other_entities" in parsed and isinstance(parsed["other_entities"], list):
-                        other_entities.update([str(x).strip().title() for x in parsed["other_entities"] if self._is_valid_entity_nlp(str(x))])
+                import json
+                json_str = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
+                parsed = json.loads(json_str)
+                if "people" in parsed and isinstance(parsed["people"], list):
+                    people.update([re.sub(r'^[-*\s()]+|[-*\s()]+$', '', str(x)).strip().title() for x in parsed["people"] if self._is_valid_entity_nlp(str(x))])
+                if "organizations" in parsed and isinstance(parsed["organizations"], list):
+                    organizations.update([str(x).strip().title() for x in parsed["organizations"] if self._is_valid_entity_nlp(str(x))])
+                if "locations" in parsed and isinstance(parsed["locations"], list):
+                    locations.update([str(x).strip().title() for x in parsed["locations"] if self._is_valid_entity_nlp(str(x))])
+                if "products" in parsed and isinstance(parsed["products"], list):
+                    products.update([str(x).strip().title() for x in parsed["products"] if self._is_valid_entity_nlp(str(x))])
+                if "other_entities" in parsed and isinstance(parsed["other_entities"], list):
+                    other_entities.update([str(x).strip().title() for x in parsed["other_entities"] if self._is_valid_entity_nlp(str(x))])
             except Exception:
                 pass
 

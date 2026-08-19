@@ -14,6 +14,8 @@ class DatasetLoader:
         self.archive_path = archive_path
         self._movie_meta_cache: Dict[str, MovieMetadata] = {}
         self._filename_map: Dict[str, str] = {}
+        self._speaker_cache: Dict[str, Optional[str]] = {}
+        self._csv_content_cache: Optional[str] = None
         self.nlp = None
         try:
             import spacy
@@ -24,34 +26,48 @@ class DatasetLoader:
     def _is_valid_speaker_nlp(self, speaker_candidate: str) -> Optional[str]:
         if not speaker_candidate:
             return None
+        if speaker_candidate in self._speaker_cache:
+            return self._speaker_cache[speaker_candidate]
+
         cand = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', str(speaker_candidate)).strip()
         cand = re.sub(r'\(.*?\)', '', cand).strip()
         
         if not cand or len(cand) <= 1 or len(cand.split()) > 3:
+            self._speaker_cache[speaker_candidate] = None
             return None
             
         if self.nlp:
             doc = self.nlp(cand)
             for token in doc:
                 if token.pos_ in {"NUM", "VERB", "PUNCT", "AUX", "DET", "ADP", "SCONJ", "CCONJ", "SYM"}:
+                    self._speaker_cache[speaker_candidate] = None
                     return None
                 if token.like_num or token.is_punct or token.is_space:
+                    self._speaker_cache[speaker_candidate] = None
                     return None
             for ent in doc.ents:
                 if ent.label_ in {"DATE", "TIME", "CARDINAL", "MONEY", "QUANTITY", "PERCENT", "ORDINAL"}:
+                    self._speaker_cache[speaker_candidate] = None
                     return None
         else:
             if re.search(r'\d+', cand) or any(c in cand for c in ['"', '...', '!', '?', ';']):
+                self._speaker_cache[speaker_candidate] = None
                 return None
                 
-        return cand.title()
+        res = cand.title()
+        self._speaker_cache[speaker_candidate] = res
+        return res
 
     def _get_metadata_csv_content(self) -> str:
+        if self._csv_content_cache is not None:
+            return self._csv_content_cache
+
         # 1. Try local extracted directory first
         local_csv = os.path.join(self.dataset_dir, "movie_metadata", "movie_meta_data.csv")
         if os.path.exists(local_csv):
             with open(local_csv, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()
+                self._csv_content_cache = f.read()
+                return self._csv_content_cache
 
         # 2. Fallback to archive zip
         if not os.path.exists(self.archive_path):
@@ -59,7 +75,8 @@ class DatasetLoader:
         
         with zipfile.ZipFile(self.archive_path, 'r') as zf:
             with zf.open('movie_metadata/movie_meta_data.csv') as f:
-                return f.read().decode('utf-8', errors='ignore')
+                self._csv_content_cache = f.read().decode('utf-8', errors='ignore')
+                return self._csv_content_cache
 
     def get_available_movies(self) -> List[Dict[str, str]]:
         movies = []

@@ -63,36 +63,29 @@ class SentimentExtractor(BaseExtractor):
 
         confidence = 0.85
 
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
+        prompt = (
+            f"Perform Sentiment and Multi-Label Emotion Analysis on this transcript text.\n"
+            f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
+            f"Text Sample: {combined_text[:1500]}\n"
+            f"Identify:\n"
+            f"- overall sentiment: ('Positive', 'Negative', 'Neutral', or 'Mixed')\n"
+            f"- emotions: list of detected emotions (e.g. Happiness, Sadness, Anger, Fear, Surprise, Love, Excitement, Anxiety, Determination)\n"
+            f"- confidence score (float 0.0 to 1.0)\n"
+            f"Return JSON format:\n"
+            f"{{\"sentiment\": \"...\", \"emotions\": [...], \"confidence\": 0.88}}"
+        )
+        llm_response = self.call_llm_with_timeout(prompt, timeout=5.0)
+        if llm_response:
             try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                prompt = (
-                    f"Perform Sentiment and Multi-Label Emotion Analysis on this transcript text.\n"
-                    f"Title: {movie_info.title if movie_info else 'Unknown'}\n"
-                    f"Text Sample: {combined_text[:1500]}\n"
-                    f"Identify:\n"
-                    f"- overall sentiment: ('Positive', 'Negative', 'Neutral', or 'Mixed')\n"
-                    f"- emotions: list of detected emotions (e.g. Happiness, Sadness, Anger, Fear, Surprise, Love, Excitement, Anxiety, Determination)\n"
-                    f"- confidence score (float 0.0 to 1.0)\n"
-                    f"Return JSON format:\n"
-                    f"{{\"sentiment\": \"...\", \"emotions\": [...], \"confidence\": 0.88}}"
-                )
-                response = client.models.generate_content(
-                    model=self.config.get("llm", {}).get("model_name", "gemini-3.6-flash"),
-                    contents=prompt
-                )
-                if response and response.text:
-                    import json
-                    json_str = re.sub(r'```json\s*|\s*```', '', response.text).strip()
-                    parsed = json.loads(json_str)
-                    if "sentiment" in parsed:
-                        overall_sentiment = parsed["sentiment"]
-                    if "emotions" in parsed and isinstance(parsed["emotions"], list):
-                        emotions_found = set(parsed["emotions"])
-                    if "confidence" in parsed and isinstance(parsed["confidence"], (int, float)):
-                        confidence = float(parsed["confidence"])
+                import json
+                json_str = re.sub(r'```json\s*|\s*```', '', llm_response).strip()
+                parsed = json.loads(json_str)
+                if "sentiment" in parsed:
+                    overall_sentiment = parsed["sentiment"]
+                if "emotions" in parsed and isinstance(parsed["emotions"], list):
+                    emotions_found = set(parsed["emotions"])
+                if "confidence" in parsed and isinstance(parsed["confidence"], (int, float)):
+                    confidence = float(parsed["confidence"])
             except Exception:
                 pass
 
