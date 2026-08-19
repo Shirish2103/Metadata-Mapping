@@ -189,6 +189,38 @@ class DatabaseManager:
                 return json.loads(row[0])
         return None
 
+    def get_metadata_exact_window(
+        self, 
+        imdb_id_or_title: str, 
+        start_time: Optional[str] = None, 
+        end_time: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        target = imdb_id_or_title.strip().lower()
+        if not start_time and not end_time:
+            return self.get_metadata(target)
+            
+        s_ts = start_time if start_time else "00:00:00"
+        e_ts = end_time if end_time else "99:59:59"
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT full_json FROM extracted_metadata 
+                WHERE (LOWER(imdb_id) = ? OR LOWER(title) LIKE ?) 
+                AND (title LIKE ? OR full_json LIKE ? OR full_json LIKE ?)
+                ORDER BY id DESC
+            """, (
+                target, 
+                f"%{target}%", 
+                f"%[{s_ts}%", 
+                f'%"start_time": "{s_ts}"%', 
+                f'%"end_time": "{e_ts}"%'
+            ))
+            row = cursor.fetchone()
+            if row:
+                return json.loads(row[0])
+        return None
+
     def get_all_metadata(self) -> List[Dict[str, Any]]:
         records = []
         with self.get_connection() as conn:

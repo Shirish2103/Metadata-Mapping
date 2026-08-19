@@ -110,17 +110,25 @@ def process_transcript_metadata(req: ProcessRequest):
         meta_info = loader.load_movie_metadata(target)
         lookup_id = meta_info.imdb_id if meta_info else target
 
-        # 1. Check if metadata is already cached/stored in SQLite Database unless force_refresh is requested
-        if not req.force_refresh:
-            stored_record = db.get_metadata(lookup_id, start_time=start_ts, end_time=end_ts)
+        # 1. If start_time or end_time specified, check exact window in DB or run dynamic windowed extraction
+        if (start_ts or end_ts) and not req.force_refresh:
+            stored_record = db.get_metadata_exact_window(lookup_id, start_time=start_ts, end_time=end_ts)
             if not stored_record and lookup_id != target:
-                stored_record = db.get_metadata(target, start_time=start_ts, end_time=end_ts)
+                stored_record = db.get_metadata_exact_window(target, start_time=start_ts, end_time=end_ts)
+                
+            if stored_record:
+                stored_record["fetch_source"] = "database"
+                return stored_record
+        elif not req.force_refresh:
+            stored_record = db.get_metadata(lookup_id)
+            if not stored_record and lookup_id != target:
+                stored_record = db.get_metadata(target)
                 
             if stored_record:
                 stored_record["fetch_source"] = "database"
                 return stored_record
 
-        # 2. Otherwise run pipeline extraction and save to database
+        # 2. Otherwise run pipeline extraction for exact time window and save to database
         result: ScriptMetadataResult = processor.process_transcript(
             imdb_id_or_title=target,
             start_time=start_ts,
