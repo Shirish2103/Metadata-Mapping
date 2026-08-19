@@ -85,7 +85,7 @@ class EntityExtractor(BaseExtractor):
                         people.add(clean_p.title())
 
         if self.nlp and combined_sample:
-            doc = self.nlp(combined_sample[:15000])
+            doc = self.nlp(combined_sample[:5000])
             for ent in doc.ents:
                 clean_ent = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', ent.text).strip().title()
                 if not self._is_valid_entity_nlp(clean_ent):

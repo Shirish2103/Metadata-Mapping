@@ -11,7 +11,7 @@ class DatabaseManager:
         self.init_db()
 
     def get_connection(self):
-        return sqlite3.connect(self.db_path)
+        return sqlite3.connect(self.db_path, timeout=60.0)
 
     def init_db(self):
         with self.get_connection() as conn:

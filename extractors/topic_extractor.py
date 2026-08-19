@@ -39,7 +39,7 @@ class TopicExtractor(BaseExtractor):
         doc_chunks = []
 
         if self.nlp:
-            doc = self.nlp(combined_text[:35000])
+            doc = self.nlp(combined_text[:5000])
             
             for token in doc:
                 if (
