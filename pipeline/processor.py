@@ -53,43 +53,52 @@ class MetadataProcessor:
 
         scenes = self.loader.load_screenplay_scenes(movie_info.imdb_id)
         if not scenes:
-            # Generate movie-specific dialogues using real cast and plot info
-            cast_members = movie_info.cast if (movie_info.cast and len(movie_info.cast) > 0) else ["Protagonist", "Supporting Character"]
+            # Generate movie-specific scenes & dialogues using real cast and plot info
+            cast_members = movie_info.cast if (movie_info.cast and len(movie_info.cast) > 0) else ["Protagonist", "Supporting Character", "Narrator"]
             plot_text = movie_info.plot if movie_info.plot else f"Story of {movie_info.title}."
             
             plot_parts = [p.strip() for p in re.split(r'[.!?]+', plot_text) if p.strip()]
-            if not plot_parts:
-                plot_parts = [f"Narrative storyline for {movie_info.title}."]
+            if not plot_parts or len(plot_parts) < 3:
+                plot_parts = [
+                    f"Opening scene introducing {movie_info.title}.",
+                    f"Main central narrative conflict unfolds.",
+                    f"{plot_text}",
+                    f"Climax and emotional resolution for {movie_info.title}."
+                ]
 
-            fallback_dialogues = []
-            for idx, part in enumerate(plot_parts[:12]):
-                speaker = cast_members[idx % len(cast_members)].title()
-                fallback_dialogues.append(
-                    Dialogue(
-                        speaker=speaker,
-                        text=part,
-                        scene_idx=1,
+            genre_loc = movie_info.genres[0].upper() if (movie_info.genres and len(movie_info.genres) > 0) else "DRAMA"
+            scenes = []
+            time_per_scene = 900.0  # 15 minutes per scene
+
+            for s_idx, part in enumerate(plot_parts):
+                speaker = cast_members[s_idx % len(cast_members)].title()
+                start_sec = s_idx * time_per_scene
+                end_sec = (s_idx + 1) * time_per_scene
+                
+                dlg = Dialogue(
+                    speaker=speaker,
+                    text=part,
+                    scene_idx=s_idx + 1,
+                    time_range=TimeRange(
+                        start_time=format_seconds_to_timestamp(start_sec),
+                        end_time=format_seconds_to_timestamp(end_sec),
+                        is_estimated=True
+                    )
+                )
+                
+                scenes.append(
+                    SceneSegment(
+                        scene_idx=s_idx + 1,
+                        location=f"SCENE {s_idx + 1} - {genre_loc}",
+                        dialogues=[dlg],
+                        action_text=f"Narrative scene sequence for {movie_info.title}.",
                         time_range=TimeRange(
-                            start_time=format_seconds_to_timestamp(idx * 60.0),
-                            end_time=format_seconds_to_timestamp((idx + 1) * 60.0),
+                            start_time=format_seconds_to_timestamp(start_sec),
+                            end_time=format_seconds_to_timestamp(end_sec),
                             is_estimated=True
                         )
                     )
                 )
-
-            genre_loc = movie_info.genres[0].upper() if (movie_info.genres and len(movie_info.genres) > 0) else "DRAMA"
-            scenes = [
-                SceneSegment(
-                    scene_idx=1,
-                    location=f"MAIN SCENE - {genre_loc}",
-                    dialogues=fallback_dialogues,
-                    time_range=TimeRange(
-                        start_time="00:00:00",
-                        end_time=format_seconds_to_timestamp(len(fallback_dialogues) * 60.0),
-                        is_estimated=True
-                    )
-                )
-            ]
 
         self.db.save_scenes(movie_info.imdb_id, scenes)
 

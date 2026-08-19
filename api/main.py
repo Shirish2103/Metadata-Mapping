@@ -106,9 +106,16 @@ def process_transcript_metadata(req: ProcessRequest):
     end_ts = req.end_time.strip() if req.end_time else None
 
     try:
+        # Resolve target query to canonical IMDB ID for database cache lookup
+        meta_info = loader.load_movie_metadata(target)
+        lookup_id = meta_info.imdb_id if meta_info else target
+
         # 1. Check if metadata is already cached/stored in SQLite Database unless force_refresh is requested
         if not req.force_refresh:
-            stored_record = db.get_metadata(target, start_time=start_ts, end_time=end_ts)
+            stored_record = db.get_metadata(lookup_id, start_time=start_ts, end_time=end_ts)
+            if not stored_record and lookup_id != target:
+                stored_record = db.get_metadata(target, start_time=start_ts, end_time=end_ts)
+                
             if stored_record:
                 stored_record["fetch_source"] = "database"
                 return stored_record
