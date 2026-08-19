@@ -190,6 +190,34 @@ class DatasetLoader:
 
         return None
 
+    _ZIP_MAPPING_CACHE: Optional[Dict[str, str]] = None
+    _ZIP_REF: Optional[zipfile.ZipFile] = None
+
+    def _get_zip_mapping(self) -> Dict[str, str]:
+        if DatasetLoader._ZIP_MAPPING_CACHE is None and os.path.exists(self.archive_path):
+            try:
+                DatasetLoader._ZIP_REF = zipfile.ZipFile(self.archive_path, 'r')
+                namelist = DatasetLoader._ZIP_REF.namelist()
+                mapping = {}
+                annot_files = [f for f in namelist if 'rule_based_annotations' in f and f.endswith('.json')]
+                for f in annot_files:
+                    basename = os.path.basename(f)
+                    file_id = basename.rsplit('_', 1)[-1].replace('.json', '').lower()
+                    raw_id = file_id.replace('tt', '').strip()
+                    padded_id = raw_id.zfill(7)
+                    
+                    title_part = basename.rsplit('_', 1)[0].lower()
+                    clean_t = re.sub(r'[^a-zA-Z0-9]', '', title_part)
+
+                    mapping[f"id_{padded_id}"] = f
+                    mapping[f"id_{raw_id}"] = f
+                    if clean_t:
+                        mapping[f"title_{clean_t}"] = f
+                DatasetLoader._ZIP_MAPPING_CACHE = mapping
+            except Exception:
+                DatasetLoader._ZIP_MAPPING_CACHE = {}
+        return DatasetLoader._ZIP_MAPPING_CACHE or {}
+
     def _load_raw_screenplay_json(self, padded_id: str, raw_id: str, clean_target_title: str) -> Optional[List[Any]]:
         # 1. Try local extracted directory first
         local_annot_dir = os.path.join(self.dataset_dir, "rule_based_annotations")
@@ -210,27 +238,20 @@ class DatasetLoader:
                 with open(os.path.join(local_annot_dir, matched_file), "r", encoding="utf-8", errors="ignore") as f:
                     return json.load(f)
 
-        # 2. Fallback to archive zip
-        if os.path.exists(self.archive_path):
-            with zipfile.ZipFile(self.archive_path, 'r') as zf:
-                namelist = zf.namelist()
-                matched_file = None
-                annot_files = [f for f in namelist if 'rule_based_annotations' in f and f.endswith('.json')]
-                for f in annot_files:
-                    basename = os.path.basename(f)
-                    if f"_{padded_id}.json" in basename or f"_{raw_id}.json" in basename:
-                        matched_file = f
-                        break
-                if not matched_file and clean_target_title:
-                    for f in annot_files:
-                        basename = os.path.basename(f)
-                        clean_file_title = re.sub(r'[^a-zA-Z0-9]', '', basename.rsplit('_', 1)[0]).lower()
-                        if clean_file_title == clean_target_title:
-                            matched_file = f
-                            break
-                if matched_file:
-                    with zf.open(matched_file) as f:
-                        return json.loads(f.read().decode('utf-8', errors='ignore'))
+        # 2. Fast O(1) Zip Lookup from in-memory cache
+        mapping = self._get_zip_mapping()
+        matched_file = (
+            mapping.get(f"id_{padded_id}") or 
+            mapping.get(f"id_{raw_id}") or 
+            (mapping.get(f"title_{clean_target_title}") if clean_target_title else None)
+        )
+
+        if matched_file and DatasetLoader._ZIP_REF:
+            try:
+                with DatasetLoader._ZIP_REF.open(matched_file) as f:
+                    return json.loads(f.read().decode('utf-8', errors='ignore'))
+            except Exception:
+                pass
         return None
 
     def load_screenplay_scenes(self, imdb_id_or_title: str) -> List[SceneSegment]:
