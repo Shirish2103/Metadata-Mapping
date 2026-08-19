@@ -545,7 +545,7 @@ def main():
                         "end_time": end_time_in.strip() if end_time_in else None,
                         "force_refresh": force_refresh
                     }
-                    res = requests.post(f"{BACKEND_URL}/api/process", json=payload, timeout=60)
+                    res = requests.post(f"{BACKEND_URL}/api/process", json=payload, timeout=120)
                     
                     if res.status_code == 200:
                         st.session_state["current_result"] = res.json()

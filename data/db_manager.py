@@ -157,40 +157,42 @@ class DatabaseManager:
         end_time: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         target = imdb_id_or_title.strip().lower()
+        clean_target = re.sub(r'[^a-zA-Z0-9]', '', target)
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
             if start_time or end_time:
                 s_ts = start_time if start_time else "00:00:00"
                 e_ts = end_time if end_time else "99:59:59"
-                cursor.execute("""
-                    SELECT full_json FROM extracted_metadata 
-                    WHERE (LOWER(imdb_id) = ? OR LOWER(title) = ?) 
-                    ORDER BY id DESC
-                """, (target, target))
+                cursor.execute("SELECT full_json FROM extracted_metadata ORDER BY id DESC")
                 rows = cursor.fetchall()
                 for row in rows:
                     rec = json.loads(row[0])
-                    tr = rec.get("time_range", {}) or {}
-                    if tr.get("start_time") == s_ts or tr.get("end_time") == e_ts:
-                        return rec
+                    r_id = rec.get("imdb_id", "").lower()
+                    r_t = rec.get("title", "").lower()
+                    r_t_clean = re.sub(r'[^a-zA-Z0-9]', '', r_t)
+                    if r_id == target or r_t == target or r_t_clean == clean_target:
+                        tr = rec.get("time_range", {}) or {}
+                        if tr.get("start_time") == s_ts or tr.get("end_time") == e_ts:
+                            return rec
 
-            cursor.execute("""
-                SELECT full_json FROM extracted_metadata 
-                WHERE LOWER(imdb_id) = ? OR LOWER(title) = ?
-                ORDER BY id DESC
-            """, (target, target))
+            cursor.execute("SELECT full_json FROM extracted_metadata ORDER BY id DESC")
             rows = cursor.fetchall()
             for row in rows:
                 rec = json.loads(row[0])
-                tr = rec.get("time_range", {}) or {}
-                tot_dur = rec.get("total_duration") or tr.get("total_duration")
-                end_ts = tr.get("end_time")
-                sc_cnt = rec.get("scene_breakdown_count", 0)
-                # Skip 1-hour windowed or dummy records for full movie queries
-                if end_ts and tot_dur and end_ts == "01:00:00" and end_ts != tot_dur and sc_cnt <= 4:
-                    continue
-                return rec
+                r_id = rec.get("imdb_id", "").lower()
+                r_t = rec.get("title", "").lower()
+                r_t_clean = re.sub(r'[^a-zA-Z0-9]', '', r_t)
+                if r_id == target or r_t == target or (clean_target and r_t_clean == clean_target):
+                    tr = rec.get("time_range", {}) or {}
+                    tot_dur = rec.get("total_duration") or tr.get("total_duration")
+                    end_ts = tr.get("end_time")
+                    sc_cnt = rec.get("scene_breakdown_count", 0)
+                    # Skip 1-hour windowed or dummy records for full movie queries
+                    if end_ts and tot_dur and end_ts == "01:00:00" and end_ts != tot_dur and sc_cnt <= 4:
+                        continue
+                    return rec
         return None
 
     def get_metadata_exact_window(
