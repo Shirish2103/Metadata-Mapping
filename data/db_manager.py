@@ -165,28 +165,32 @@ class DatabaseManager:
                 e_ts = end_time if end_time else "99:59:59"
                 cursor.execute("""
                     SELECT full_json FROM extracted_metadata 
-                    WHERE (LOWER(imdb_id) = ? OR LOWER(title) LIKE ?) 
-                    AND (title LIKE ? OR full_json LIKE ? OR full_json LIKE ?)
+                    WHERE (LOWER(imdb_id) = ? OR LOWER(title) = ?) 
                     ORDER BY id DESC
-                """, (
-                    target, 
-                    f"%{target}%", 
-                    f"%[{s_ts}%", 
-                    f'%"start_time": "{s_ts}"%', 
-                    f'%"end_time": "{e_ts}"%'
-                ))
-                row = cursor.fetchone()
-                if row:
-                    return json.loads(row[0])
+                """, (target, target))
+                rows = cursor.fetchall()
+                for row in rows:
+                    rec = json.loads(row[0])
+                    tr = rec.get("time_range", {}) or {}
+                    if tr.get("start_time") == s_ts or tr.get("end_time") == e_ts:
+                        return rec
 
             cursor.execute("""
                 SELECT full_json FROM extracted_metadata 
-                WHERE LOWER(imdb_id) = ? OR LOWER(title) LIKE ?
+                WHERE LOWER(imdb_id) = ? OR LOWER(title) = ?
                 ORDER BY id DESC
-            """, (target, f"%{target}%"))
-            row = cursor.fetchone()
-            if row:
-                return json.loads(row[0])
+            """, (target, target))
+            rows = cursor.fetchall()
+            for row in rows:
+                rec = json.loads(row[0])
+                tr = rec.get("time_range", {}) or {}
+                tot_dur = rec.get("total_duration") or tr.get("total_duration")
+                end_ts = tr.get("end_time")
+                sc_cnt = rec.get("scene_breakdown_count", 0)
+                # Skip 1-hour windowed or dummy records for full movie queries
+                if end_ts and tot_dur and end_ts == "01:00:00" and end_ts != tot_dur and sc_cnt <= 4:
+                    continue
+                return rec
         return None
 
     def get_metadata_exact_window(

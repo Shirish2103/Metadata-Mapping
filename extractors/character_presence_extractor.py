@@ -49,9 +49,9 @@ class CharacterPresenceExtractor(BaseExtractor):
         first_n = name_clean.split()[0] if name_clean.split() else ""
         
         # Immediate semantic indicator terms
-        if first_n in {"ma", "mom", "mother", "mrs", "miss", "ms", "lady", "queen", "girl", "woman", "daughter", "sister", "aunt", "lelaina", "vickie", "ruby", "juliet", "mary"}:
+        if first_n in {"ma", "mom", "mother", "mrs", "miss", "ms", "lady", "queen", "girl", "woman", "daughter", "sister", "aunt", "lelaina", "vickie", "ruby", "juliet", "mary", "kat", "bianca"}:
             return "Female"
-        if first_n in {"pa", "dad", "father", "mr", "king", "boy", "man", "son", "brother", "uncle", "troy", "sammy", "michael", "calvin", "jack", "john", "romeo"}:
+        if first_n in {"pa", "dad", "father", "mr", "king", "boy", "man", "son", "brother", "uncle", "troy", "sammy", "michael", "calvin", "jack", "john", "romeo", "patrick", "cameron", "sam"}:
             return "Male"
 
         fem_score = 0

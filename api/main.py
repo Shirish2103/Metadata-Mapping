@@ -92,14 +92,21 @@ def list_available_movies():
     return movies
 
 
-def is_valid_stored_record(rec: Optional[Dict[str, Any]]) -> bool:
+def is_valid_stored_record(rec: Optional[Dict[str, Any]], is_full_movie_query: bool = False) -> bool:
     if not rec or not isinstance(rec, dict):
         return False
     sc_cnt = rec.get("scene_breakdown_count", 0)
     char_pres = rec.get("character_presence", {}) or {}
     chars = char_pres.get("characters", [])
+    tr = rec.get("time_range", {}) or {}
+    end_time = tr.get("end_time")
+    
     if sc_cnt <= 4 and chars and chars[0].get("character_name") in {"Cast", "External SRT Transcript", "TRANSCRIPT", "Unknown"}:
         return False
+        
+    if is_full_movie_query and end_time == "01:00:00" and sc_cnt <= 4:
+        return False
+
     return True
 
 @app.post("/api/process", response_model=Dict[str, Any])
@@ -114,6 +121,7 @@ def process_transcript_metadata(req: ProcessRequest):
     target = req.title_or_imdb.strip()
     start_ts = req.start_time.strip() if req.start_time else None
     end_ts = req.end_time.strip() if req.end_time else None
+    is_full_query = (not start_ts and not end_ts)
 
     try:
         # Resolve target query to canonical IMDB ID for database cache lookup
@@ -126,7 +134,7 @@ def process_transcript_metadata(req: ProcessRequest):
             if not stored_record and lookup_id != target:
                 stored_record = db.get_metadata_exact_window(target, start_time=start_ts, end_time=end_ts)
                 
-            if is_valid_stored_record(stored_record):
+            if is_valid_stored_record(stored_record, is_full_movie_query=False):
                 stored_record["fetch_source"] = "database"
                 return stored_record
         elif not req.force_refresh:
@@ -134,7 +142,7 @@ def process_transcript_metadata(req: ProcessRequest):
             if not stored_record and lookup_id != target:
                 stored_record = db.get_metadata(target)
                 
-            if is_valid_stored_record(stored_record):
+            if is_valid_stored_record(stored_record, is_full_movie_query=True):
                 stored_record["fetch_source"] = "database"
                 return stored_record
 
