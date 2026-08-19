@@ -16,12 +16,6 @@ class DatasetLoader:
         self._filename_map: Dict[str, str] = {}
         self._speaker_cache: Dict[str, Optional[str]] = {}
         self._csv_content_cache: Optional[str] = None
-        self.nlp = None
-        try:
-            import spacy
-            self.nlp = spacy.load("en_core_web_sm")
-        except Exception:
-            self.nlp = None
 
     def _is_valid_speaker_nlp(self, speaker_candidate: str) -> Optional[str]:
         if not speaker_candidate:
@@ -29,34 +23,34 @@ class DatasetLoader:
         if speaker_candidate in self._speaker_cache:
             return self._speaker_cache[speaker_candidate]
 
-        cand = re.sub(r'^[-*\s()"\':;.]+|[-*\s()"\':;.]+$', '', str(speaker_candidate)).strip()
-        cand = re.sub(r'\(.*?\)', '', cand).strip()
+        # Fast Regex Sanitization & Noise Purge
+        cand = re.sub(r'\(.*?\)', '', str(speaker_candidate))
+        cand = re.sub(r"['’]s$", '', cand, flags=re.IGNORECASE)
+        cand = re.sub(r'[^a-zA-Z\s]', ' ', cand).strip()
+        cand = re.sub(r'\s+', ' ', cand).title().strip()
         
         if not cand or len(cand) <= 1 or len(cand.split()) > 3:
             self._speaker_cache[speaker_candidate] = None
             return None
-            
-        if self.nlp:
-            doc = self.nlp(cand)
-            for token in doc:
-                if token.pos_ in {"NUM", "VERB", "PUNCT", "AUX", "DET", "ADP", "SCONJ", "CCONJ", "SYM"}:
-                    self._speaker_cache[speaker_candidate] = None
-                    return None
-                if token.like_num or token.is_punct or token.is_space:
-                    self._speaker_cache[speaker_candidate] = None
-                    return None
-            for ent in doc.ents:
-                if ent.label_ in {"DATE", "TIME", "CARDINAL", "MONEY", "QUANTITY", "PERCENT", "ORDINAL"}:
-                    self._speaker_cache[speaker_candidate] = None
-                    return None
-        else:
-            if re.search(r'\d+', cand) or any(c in cand for c in ['"', '...', '!', '?', ';']):
+
+        upper_c = cand.upper()
+        noise_terms = {
+            "UNKNOWN", "NONE", "N/A", "CONTINUED", "TITLE", "SUPERIMPOSE", "MONTAGE",
+            "SCENE", "CUT TO", "FADE IN", "FADE OUT", "DISSOLVE", "TIME DISSOLVE",
+            "END MONTAGE", "END_MONTAGE", "MOMENTS LATER", "HALLWAY", "OFFSCREEN",
+            "VOICEOVER", "CAMERA", "ANGLE", "CLOSE UP", "FLASHBACK", "EXT", "INT"
+        }
+        if upper_c in noise_terms:
+            self._speaker_cache[speaker_candidate] = None
+            return None
+
+        for w in ["MONTAGE", "DISSOLVE", "SUPERIMPOSE", "CONTINUED"]:
+            if w in upper_c:
                 self._speaker_cache[speaker_candidate] = None
                 return None
-                
-        res = cand.title()
-        self._speaker_cache[speaker_candidate] = res
-        return res
+
+        self._speaker_cache[speaker_candidate] = cand
+        return cand
 
     def _get_metadata_csv_content(self) -> str:
         if self._csv_content_cache is not None:
