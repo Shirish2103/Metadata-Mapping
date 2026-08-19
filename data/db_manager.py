@@ -188,3 +188,16 @@ class DatabaseManager:
             if row:
                 return json.loads(row[0])
         return None
+
+    def get_all_metadata(self) -> List[Dict[str, Any]]:
+        records = []
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT full_json FROM extracted_metadata ORDER BY id ASC")
+            rows = cursor.fetchall()
+            for row in rows:
+                try:
+                    records.append(json.loads(row[0]))
+                except Exception:
+                    pass
+        return records
